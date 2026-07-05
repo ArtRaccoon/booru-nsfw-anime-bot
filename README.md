@@ -52,6 +52,16 @@ RESULT_LIMIT=30
 
 Optional provider base URLs are documented in `.env.example`. `SHIMMIE_BASE_URL` enables the generic Shimmie provider.
 
+## Running behind server SOCKS5 proxy
+
+If Telegram API requests are unavailable from the server directly, route aiogram polling and booru provider HTTP requests through a local SOCKS5 or HTTP proxy by setting `PROXY_URL` in `.env`:
+
+```env
+PROXY_URL=socks5://127.0.0.1:1080
+```
+
+Leave `PROXY_URL` empty when no proxy is required. The bot passes this value to aiogram's aiohttp session and to all `httpx` provider clients; no proxy address is hardcoded in the application.
+
 ## Docker
 
 ```bash
