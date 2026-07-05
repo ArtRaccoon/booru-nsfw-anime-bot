@@ -1,61 +1,73 @@
-# Shimmie NSFW Anime Telegram Bot
+# Booru NSFW Anime Telegram Bot
 
-Простой Telegram-бот для поиска NSFW anime-артов через Shimmie/Danbooru-like API.
+A modular Python 3.11+ Telegram bot for searching and sending adult NSFW anime images from multiple booru APIs.
 
-## Что умеет
+## Features
 
-- Возрастное подтверждение 18+
-- Поиск по тегам
-- Случайный арт
-- Inline-интерфейс
-- Админ без лимитов, кулдаунов и фильтрации тегов
-- Блокировка underage/illegal тегов для обычных пользователей
-- Гибкий источник через `SHIMMIE_BASE_URL`
+- 18+ confirmation gate before searches.
+- Tag search and random explicit image command.
+- Provider selection across Danbooru, Gelbooru, Rule34.xxx, Yande.re, Konachan, and optional Shimmie-compatible boorus.
+- Favorites and search history persisted in SQLite via `aiosqlite`.
+- Inline buttons for next result, repeat search, and save favorite.
+- Centralized safety checks in `app/safety.py`.
+- Admin IDs from `ADMIN_IDS` bypass cooldowns, daily limits, and tag blocks.
+- Docker and docker-compose deployment.
 
-> Важно: у Shimmie API бывает разная конфигурация. Бот сначала пробует Danbooru-like `post/index.json`, затем `posts.json`.
+## Commands
 
-## Быстрый старт
+- `/start` — create user and confirm 18+ status.
+- `/random` — fetch a random explicit result from the selected provider.
+- `/search <tags>` — search selected provider by tags.
+- `/providers` — show provider picker.
+- `/set_provider <provider>` — select provider by name.
+- `/favorites` — acknowledge saved favorites.
+- `/history` — acknowledge recorded search history.
+- `/admin` — show admin commands.
+- `/stats` — show database totals for admins.
+
+Admin-only placeholders are included for `/broadcast`, `/reload_providers`, and `/set_global_provider <provider>`.
+
+## Setup
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -e '.[dev]'
 cp .env.example .env
 nano .env
 python -m app.bot
 ```
 
-## .env
+Required environment:
 
 ```env
-BOT_TOKEN=123456:telegram_token
-ADMIN_IDS=123456789,987654321
-SHIMMIE_BASE_URL=https://example.com
-DEFAULT_TAGS=rating:explicit anime
+BOT_TOKEN=
+ADMIN_IDS=
+DEFAULT_PROVIDER=gelbooru
+DATABASE_PATH=data/bot.sqlite3
 RATE_LIMIT_SECONDS=8
-RESULT_LIMIT=40
+DAILY_LIMIT=50
+RESULT_LIMIT=30
 ```
 
-## Команды
+Optional provider base URLs are documented in `.env.example`. `SHIMMIE_BASE_URL` enables the generic Shimmie provider.
 
-- `/start` — запуск и подтверждение 18+
-- `/random` — случайный арт
-- `/search tag1 tag2` — поиск
-- `/admin` — админ-панель
-- `/source https://example.com` — сменить источник, только админ
-- `/stats` — статистика, только админ
+## Docker
 
-## Для Codex
-
-Можно дать Codex задачу:
-
-```text
-Продолжи этот Telegram bot repo. Добавь:
-1. несколько booru-провайдеров: Shimmie, Gelbooru, Rule34;
-2. сохранение избранного;
-3. историю запросов;
-4. пагинацию результатов;
-5. Dockerfile и docker-compose;
-6. GitHub Actions lint/test.
-Не убирай age gate. Для обычных пользователей оставь tag guard. Для админов не должно быть фильтрации, кулдаунов и лимитов.
+```bash
+cp .env.example .env
+nano .env
+docker compose up --build -d
 ```
+
+SQLite data is stored under `./data` through a compose volume.
+
+## Development
+
+```bash
+ruff check .
+ruff format .
+pytest
+```
+
+> Do not hardcode Telegram tokens. Keep secrets in `.env` only.
