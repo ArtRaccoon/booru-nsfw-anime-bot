@@ -69,7 +69,7 @@ async def run_search(
     record_search(state)
     await db.add_history(message.from_user.id, provider.name if provider else provider_name, query)
     if not posts:
-        await message.answer("No results.")
+        await message.answer("All currently enabled providers are temporarily unavailable.")
         return
     post_cache[(message.from_user.id, posts[0].post_id)] = posts[0]
     await send_post(message, posts[0], query, page)

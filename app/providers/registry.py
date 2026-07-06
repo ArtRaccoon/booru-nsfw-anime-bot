@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import httpx
 
 from app.providers.base import BaseProvider
 from app.providers.engines.danbooru import DanbooruOldProvider, DanbooruProvider
@@ -14,6 +17,7 @@ from app.providers.engines.szurubooru import SzurubooruProvider
 
 CONFIG_PATH = Path(__file__).with_name("providers.yml")
 DISABLED_ENGINES = {"unknown", "custom", "no_api"}
+logger = logging.getLogger("providers")
 
 
 @dataclass(frozen=True)
@@ -45,6 +49,15 @@ class ProviderRegistry:
     def __init__(self, configs: list[ProviderConfig], proxy_url: str | None = None) -> None:
         self.configs = {c.slug: c for c in configs}
         self.proxy_url = proxy_url
+        client_kwargs: dict[str, Any] = {
+            "timeout": httpx.Timeout(15.0, connect=10.0),
+            "follow_redirects": True,
+            "limits": httpx.Limits(max_connections=50, max_keepalive_connections=20),
+            "headers": {"User-Agent": "booru-nsfw-anime-bot/0.1"},
+        }
+        if proxy_url:
+            client_kwargs["proxy"] = proxy_url
+        self.client = httpx.AsyncClient(**client_kwargs)
         self.providers = self._build_enabled()
 
     @classmethod
@@ -54,20 +67,30 @@ class ProviderRegistry:
         return cls(configs, proxy_url=proxy_url)
 
     def _build_enabled(self) -> dict[str, BaseProvider]:
-        return {
-            slug: self.build_provider(cfg) for slug, cfg in self.configs.items() if cfg.selectable
-        }
+        providers: dict[str, BaseProvider] = {}
+        for slug, cfg in self.configs.items():
+            if not cfg.selectable:
+                continue
+            try:
+                providers[slug] = self.build_provider(cfg)
+            except ValueError as exc:
+                logger.warning("Skipping provider %s during startup: %s", slug, exc)
+        return providers
 
     def build_provider(self, cfg_or_slug: ProviderConfig | str) -> BaseProvider:
         cfg = self.configs[cfg_or_slug] if isinstance(cfg_or_slug, str) else cfg_or_slug
         cls = engine_class(cfg.engine)
-        return cls(cfg.base_url, name=cfg.slug, api_url=cfg.api_url, proxy_url=self.proxy_url)
+        return cls(cfg.base_url, name=cfg.slug, api_url=cfg.api_url, client=self.client)
 
     def enable(self, slug: str) -> bool:
         cfg = self.configs.get(slug)
         if not cfg or cfg.engine in DISABLED_ENGINES or cfg.requires_auth or cfg.broken:
             return False
-        self.providers[slug] = self.build_provider(cfg)
+        try:
+            self.providers[slug] = self.build_provider(cfg)
+        except ValueError as exc:
+            logger.warning("Cannot enable provider %s: %s", slug, exc)
+            return False
         return True
 
     async def disable(self, slug: str) -> bool:
@@ -78,11 +101,22 @@ class ProviderRegistry:
         return slug in self.configs
 
     async def reload(self) -> None:
-        for provider in self.providers.values():
-            await provider.close()
+        await self.close()
         fresh = self.load(proxy_url=self.proxy_url)
         self.configs = fresh.configs
+        self.client = fresh.client
         self.providers = fresh.providers
+
+    async def close(self) -> None:
+        await self.client.aclose()
+
+    def select_default(self, preferred: str | None = None) -> str:
+        if preferred and preferred in self.providers:
+            return preferred
+        try:
+            return next(iter(self.providers))
+        except StopIteration as exc:
+            raise RuntimeError("No enabled providers available.") from exc
 
     def enabled_slugs(self) -> list[str]:
         return list(self.providers)
@@ -107,10 +141,11 @@ def engine_class(engine: str) -> type[BaseProvider]:
 async def fallback_search(
     providers: dict[str, BaseProvider], tags: str, limit: int, page: int
 ) -> tuple[BaseProvider | None, list[Any]]:
-    for provider in providers.values():
+    for slug, provider in providers.items():
         try:
             posts = await provider.search(tags, limit, page)
-        except Exception:
+        except Exception as exc:
+            logger.exception("Provider %s failed during search and will be skipped: %s", slug, exc)
             posts = []
         if posts:
             return provider, posts

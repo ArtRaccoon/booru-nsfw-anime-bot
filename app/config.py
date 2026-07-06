@@ -1,7 +1,10 @@
+import logging
 from functools import lru_cache
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+logger = logging.getLogger("admin")
 
 
 class Settings(BaseSettings):
@@ -29,8 +32,17 @@ class Settings(BaseSettings):
         if isinstance(value, set):
             return value
         if isinstance(value, list):
-            return {int(v) for v in value}
-        return {int(v.strip()) for v in str(value).split(",") if v.strip()}
+            value = ",".join(str(v) for v in value)
+        parsed: set[int] = set()
+        for raw in str(value).split(","):
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                parsed.add(int(raw))
+            except ValueError:
+                logger.warning("Ignoring invalid ADMIN_IDS value %r", raw)
+        return parsed
 
     @field_validator("proxy_url", mode="before")
     @classmethod
@@ -38,7 +50,12 @@ class Settings(BaseSettings):
         if value is None:
             return None
         value = str(value).strip()
-        return value or None
+        if not value:
+            return None
+        if "://" not in value:
+            logger.warning("Ignoring invalid PROXY_URL value %r", value)
+            return None
+        return value
 
 
 @lru_cache

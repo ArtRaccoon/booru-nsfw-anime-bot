@@ -26,8 +26,14 @@ async def main() -> None:
     await db.connect()
     provider_registry = build_registry(settings)
     providers_map = provider_registry.providers
-    if settings.default_provider not in providers_map:
-        raise RuntimeError(f"DEFAULT_PROVIDER {settings.default_provider!r} is not configured")
+    selected_default = provider_registry.select_default(settings.default_provider)
+    if selected_default != settings.default_provider:
+        logging.getLogger("providers").warning(
+            "Configured DEFAULT_PROVIDER %r is unavailable; using %r",
+            settings.default_provider,
+            selected_default,
+        )
+        settings.default_provider = selected_default
 
     bot = create_bot(settings.bot_token, settings.proxy_url)
     dp = Dispatcher(
@@ -39,8 +45,7 @@ async def main() -> None:
         await dp.start_polling(bot)
     finally:
         await bot.session.close()
-        for provider in providers_map.values():
-            await provider.close()
+        await provider_registry.close()
 
 
 if __name__ == "__main__":

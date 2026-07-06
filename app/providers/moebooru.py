@@ -16,7 +16,7 @@ class MoebooruProvider(BaseProvider):
         data = self.safe_json(resp)
         if not isinstance(data, list):
             return []
-        return [self.normalize_post(item) for item in data if item.get("file_url")]
+        return self.safe_normalize_many(data, ("file_url",))
 
     def normalize_post(self, raw: dict[str, Any]) -> BooruPost:
         post_id = str(raw.get("id", ""))
