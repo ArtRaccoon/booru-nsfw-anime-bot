@@ -81,3 +81,35 @@ def test_provider_info_command_displays_metadata():
     text = format_provider_info(registry.configs["danbooru"], True)
     assert "Engine: danbooru" in text
     assert "Category: anime_nsfw" in text
+
+
+def test_default_provider_falls_back_to_first_enabled_provider():
+    registry = ProviderRegistry.load()
+    try:
+        assert registry.select_default("missing-provider") == registry.enabled_slugs()[0]
+    finally:
+        asyncio.run(registry.close())
+
+
+def test_unknown_enabled_engine_does_not_crash_startup():
+    base = ProviderRegistry.load()
+    danbooru_cfg = base.configs["danbooru"]
+    cfg_cls = type(danbooru_cfg)
+    asyncio.run(base.close())
+    registry = ProviderRegistry(
+        [
+            danbooru_cfg,
+            cfg_cls(
+                name="Unknown",
+                slug="unknown_enabled",
+                engine="new_engine",
+                base_url="https://example.com",
+                enabled_by_default=True,
+            ),
+        ]
+    )
+    try:
+        assert "danbooru" in registry.providers
+        assert "unknown_enabled" not in registry.providers
+    finally:
+        asyncio.run(registry.close())

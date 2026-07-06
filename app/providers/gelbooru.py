@@ -24,7 +24,9 @@ class GelbooruProvider(BaseProvider):
             return []
         data = self.safe_json(resp)
         posts = data.get("post", data) if isinstance(data, dict) else data
-        return [self.normalize_post(item) for item in posts if item.get("file_url")]
+        if isinstance(posts, dict):
+            posts = [posts]
+        return self.safe_normalize_many(posts, ("file_url",))
 
     def normalize_post(self, raw: dict[str, Any]) -> BooruPost:
         post_id = str(raw.get("id", ""))
