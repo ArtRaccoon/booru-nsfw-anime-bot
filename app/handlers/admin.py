@@ -118,6 +118,7 @@ async def disable_provider(message: Message, settings, provider_registry, provid
     else:
         await message.answer("Unknown provider.")
 
+
 @router.message(Command("list_disabled"))
 async def list_disabled(message: Message, settings, provider_registry) -> None:
     if not await require_admin(message, settings):

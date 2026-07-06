@@ -106,6 +106,46 @@ class Database:
         )
         await self.conn.commit()
 
+    async def list_favorites(self, telegram_id: int, limit: int = 20, offset: int = 0):
+        assert self.conn
+        return await (
+            await self.conn.execute(
+                "SELECT * FROM favorites WHERE telegram_id=? ORDER BY id DESC LIMIT ? OFFSET ?",
+                (telegram_id, limit, offset),
+            )
+        ).fetchall()
+
+    async def count_favorites(self, telegram_id: int) -> int:
+        assert self.conn
+        row = await (
+            await self.conn.execute(
+                "SELECT COUNT(*) c FROM favorites WHERE telegram_id=?", (telegram_id,)
+            )
+        ).fetchone()
+        return int(row["c"])
+
+    async def remove_favorite(self, telegram_id: int, favorite_id: int) -> None:
+        assert self.conn
+        await self.conn.execute(
+            "DELETE FROM favorites WHERE telegram_id=? AND id=?", (telegram_id, favorite_id)
+        )
+        await self.conn.commit()
+
+    async def recent_history(self, telegram_id: int, limit: int = 10):
+        assert self.conn
+        return await (
+            await self.conn.execute(
+                "SELECT query, MAX(created_at) created_at FROM search_history "
+                "WHERE telegram_id=? GROUP BY query ORDER BY created_at DESC LIMIT ?",
+                (telegram_id, limit),
+            )
+        ).fetchall()
+
+    async def clear_history(self, telegram_id: int) -> None:
+        assert self.conn
+        await self.conn.execute("DELETE FROM search_history WHERE telegram_id=?", (telegram_id,))
+        await self.conn.commit()
+
     async def get_stats(self) -> dict[str, int]:
         assert self.conn
         users = (await (await self.conn.execute("SELECT COUNT(*) c FROM users")).fetchone())["c"]
