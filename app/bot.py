@@ -6,7 +6,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.config import get_settings
 from app.database import Database
-from app.handlers import admin, favorites, providers, search, start
+from app.handlers import admin, favorites, menu, providers, search, start
 from app.providers import build_registry
 
 
@@ -39,7 +39,14 @@ async def main() -> None:
     dp = Dispatcher(
         db=db, settings=settings, providers_map=providers_map, provider_registry=provider_registry
     )
-    for router in (start.router, providers.router, search.router, favorites.router, admin.router):
+    for router in (
+        start.router,
+        menu.router,
+        providers.router,
+        search.router,
+        favorites.router,
+        admin.router,
+    ):
         dp.include_router(router)
     try:
         await dp.start_polling(bot)
