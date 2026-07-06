@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     rate_limit_seconds: int = Field(default=8, alias="RATE_LIMIT_SECONDS")
     daily_limit: int = Field(default=50, alias="DAILY_LIMIT")
     result_limit: int = Field(default=30, alias="RESULT_LIMIT")
+    proxy_url: str | None = Field(default=None, alias="PROXY_URL")
 
     danbooru_base_url: str = Field(default="https://danbooru.donmai.us", alias="DANBOORU_BASE_URL")
     gelbooru_base_url: str = Field(default="https://gelbooru.com", alias="GELBOORU_BASE_URL")
@@ -30,6 +31,14 @@ class Settings(BaseSettings):
         if isinstance(value, list):
             return {int(v) for v in value}
         return {int(v.strip()) for v in str(value).split(",") if v.strip()}
+
+    @field_validator("proxy_url", mode="before")
+    @classmethod
+    def parse_proxy_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = str(value).strip()
+        return value or None
 
 
 @lru_cache

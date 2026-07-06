@@ -11,9 +11,12 @@ class BaseProvider(ABC):
     name: str
     base_url: str
 
-    def __init__(self, base_url: str, timeout: float = 15.0) -> None:
+    def __init__(self, base_url: str, timeout: float = 15.0, proxy_url: str | None = None) -> None:
         self.base_url = base_url.rstrip("/")
-        self.client = httpx.AsyncClient(timeout=timeout, follow_redirects=True)
+        client_kwargs: dict[str, Any] = {"timeout": timeout, "follow_redirects": True}
+        if proxy_url:
+            client_kwargs["proxy"] = proxy_url
+        self.client = httpx.AsyncClient(**client_kwargs)
 
     @abstractmethod
     async def search(self, tags: str, limit: int, page: int) -> list[BooruPost]: ...

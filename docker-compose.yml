@@ -2,6 +2,8 @@ services:
   bot:
     build: .
     env_file: .env
+    environment:
+      PROXY_URL: ${PROXY_URL:-}
     volumes:
       - ./data:/app/data
     restart: unless-stopped

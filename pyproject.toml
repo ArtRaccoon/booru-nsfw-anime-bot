@@ -5,7 +5,8 @@ description = "Telegram bot for NSFW anime booru search"
 requires-python = ">=3.11"
 dependencies = [
   "aiogram>=3.8,<4",
-  "httpx>=0.27,<1",
+  "httpx[socks]>=0.27,<1",
+  "aiohttp-socks>=0.9,<1",
   "pydantic-settings>=2.3,<3",
   "aiosqlite>=0.20,<1",
 ]

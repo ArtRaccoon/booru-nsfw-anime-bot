@@ -8,12 +8,14 @@ from app.providers.shimmie import ShimmieProvider
 
 def build_providers(settings: Settings) -> dict[str, BaseProvider]:
     providers: dict[str, BaseProvider] = {
-        "danbooru": DanbooruProvider(settings.danbooru_base_url),
-        "gelbooru": GelbooruProvider(settings.gelbooru_base_url),
-        "rule34": Rule34Provider(settings.rule34_base_url),
-        "yandere": YandereProvider(settings.yandere_base_url),
-        "konachan": KonachanProvider(settings.konachan_base_url),
+        "danbooru": DanbooruProvider(settings.danbooru_base_url, proxy_url=settings.proxy_url),
+        "gelbooru": GelbooruProvider(settings.gelbooru_base_url, proxy_url=settings.proxy_url),
+        "rule34": Rule34Provider(settings.rule34_base_url, proxy_url=settings.proxy_url),
+        "yandere": YandereProvider(settings.yandere_base_url, proxy_url=settings.proxy_url),
+        "konachan": KonachanProvider(settings.konachan_base_url, proxy_url=settings.proxy_url),
     }
     if settings.shimmie_base_url:
-        providers["shimmie"] = ShimmieProvider(settings.shimmie_base_url)
+        providers["shimmie"] = ShimmieProvider(
+            settings.shimmie_base_url, proxy_url=settings.proxy_url
+        )
     return providers
