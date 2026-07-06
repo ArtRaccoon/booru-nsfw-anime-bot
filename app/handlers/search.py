@@ -4,6 +4,7 @@ from aiogram.types import CallbackQuery, Message
 
 from app.keyboards import post_keyboard
 from app.models import BooruPost
+from app.providers.registry import fallback_search
 from app.safety import LimitState, can_search, record_search, validate_tags
 
 router = Router()
@@ -59,10 +60,14 @@ async def run_search(
         await message.answer(reason)
         return
     provider_name = await db.get_provider(message.from_user.id, settings.default_provider)
-    provider = providers_map.get(provider_name) or providers_map[settings.default_provider]
-    posts = await provider.search(query, settings.result_limit, page)
+    ordered = {}
+    if provider_name in providers_map:
+        ordered[provider_name] = providers_map[provider_name]
+    for slug, candidate in providers_map.items():
+        ordered.setdefault(slug, candidate)
+    provider, posts = await fallback_search(ordered, query, settings.result_limit, page)
     record_search(state)
-    await db.add_history(message.from_user.id, provider.name, query)
+    await db.add_history(message.from_user.id, provider.name if provider else provider_name, query)
     if not posts:
         await message.answer("No results.")
         return

@@ -8,11 +8,15 @@ class DanbooruProvider(BaseProvider):
     name = "danbooru"
 
     async def search(self, tags: str, limit: int, page: int) -> list[BooruPost]:
-        resp = await self.client.get(
+        resp = await self.safe_get(
             f"{self.base_url}/posts.json", params={"tags": tags, "limit": limit, "page": page}
         )
-        resp.raise_for_status()
-        return [self.normalize_post(item) for item in resp.json() if item.get("file_url")]
+        if resp is None:
+            return []
+        data = self.safe_json(resp)
+        if not isinstance(data, list):
+            return []
+        return [self.normalize_post(item) for item in data if item.get("file_url")]
 
     def normalize_post(self, raw: dict[str, Any]) -> BooruPost:
         tags = raw.get("tag_string") or " ".join(raw.get("tags", []))
