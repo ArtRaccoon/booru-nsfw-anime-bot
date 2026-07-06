@@ -9,7 +9,7 @@ class Settings(BaseSettings):
 
     bot_token: str = Field(default="", alias="BOT_TOKEN")
     admin_ids: set[int] = Field(default_factory=set, alias="ADMIN_IDS")
-    default_provider: str = Field(default="gelbooru", alias="DEFAULT_PROVIDER")
+    default_provider: str = Field(default="danbooru", alias="DEFAULT_PROVIDER")
     database_path: str = Field(default="data/bot.sqlite3", alias="DATABASE_PATH")
     rate_limit_seconds: int = Field(default=8, alias="RATE_LIMIT_SECONDS")
     daily_limit: int = Field(default=50, alias="DAILY_LIMIT")

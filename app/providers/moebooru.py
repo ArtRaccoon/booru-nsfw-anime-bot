@@ -8,11 +8,15 @@ class MoebooruProvider(BaseProvider):
     name = "moebooru"
 
     async def search(self, tags: str, limit: int, page: int) -> list[BooruPost]:
-        resp = await self.client.get(
+        resp = await self.safe_get(
             f"{self.base_url}/post.json", params={"tags": tags, "limit": limit, "page": page}
         )
-        resp.raise_for_status()
-        return [self.normalize_post(item) for item in resp.json() if item.get("file_url")]
+        if resp is None:
+            return []
+        data = self.safe_json(resp)
+        if not isinstance(data, list):
+            return []
+        return [self.normalize_post(item) for item in data if item.get("file_url")]
 
     def normalize_post(self, raw: dict[str, Any]) -> BooruPost:
         post_id = str(raw.get("id", ""))

@@ -43,7 +43,7 @@ Required environment:
 ```env
 BOT_TOKEN=
 ADMIN_IDS=
-DEFAULT_PROVIDER=gelbooru
+DEFAULT_PROVIDER=danbooru
 DATABASE_PATH=data/bot.sqlite3
 RATE_LIMIT_SECONDS=8
 DAILY_LIMIT=50
@@ -81,3 +81,20 @@ pytest
 ```
 
 > Do not hardcode Telegram tokens. Keep secrets in `.env` only.
+
+## Provider registry
+
+Provider support is data-driven from `app/providers/providers.yml`. Each entry declares the provider `slug`, display `name`, `engine`, `base_url`, optional `api_url`, `sfw_status`, `category`, `enabled_by_default`, `requires_auth`, `broken`, `anime_relevant`, and notes.
+
+Only providers that are `enabled_by_default: true`, not marked `broken`, not marked `requires_auth`, and backed by a known API adapter are selectable by normal users and used by fallback search. Unknown/custom/no-API catalog entries are retained in the registry for admin visibility, but are not enabled by default.
+
+Provider groups are recorded in the `category` field: `anime_nsfw`, `anime_sfw`, `furry`, `pony`, `mixed`, `photos`, `memes`, and `unknown`.
+
+To add a source, add a new entry to `app/providers/providers.yml` using the closest compatible engine (`danbooru`, `danbooru_old`, `gelbooru_v02`, `gelbooru_v01`, `moebooru`, `shimmie`, `philomena`, or `szurubooru`). If the site requires login, is broken, has no known API, or has an unknown/custom API, keep `enabled_by_default: false` and set `requires_auth` or `broken` where appropriate.
+
+Admins can inspect and manage providers with:
+
+- `/provider_info <slug>` — show registry metadata.
+- `/test_provider <slug>` — run a small test search without crashing on HTTP/API failures.
+- `/reload_providers` — reload `providers.yml`.
+- `/enable_provider <slug>` and `/disable_provider <slug>` — manually change the runtime enabled set.

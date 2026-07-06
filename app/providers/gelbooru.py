@@ -8,7 +8,7 @@ class GelbooruProvider(BaseProvider):
     name = "gelbooru"
 
     async def search(self, tags: str, limit: int, page: int) -> list[BooruPost]:
-        resp = await self.client.get(
+        resp = await self.safe_get(
             f"{self.base_url}/index.php",
             params={
                 "page": "dapi",
@@ -20,8 +20,9 @@ class GelbooruProvider(BaseProvider):
                 "pid": max(page - 1, 0),
             },
         )
-        resp.raise_for_status()
-        data = resp.json()
+        if resp is None:
+            return []
+        data = self.safe_json(resp)
         posts = data.get("post", data) if isinstance(data, dict) else data
         return [self.normalize_post(item) for item in posts if item.get("file_url")]
 

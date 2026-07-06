@@ -7,7 +7,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from app.config import get_settings
 from app.database import Database
 from app.handlers import admin, favorites, providers, search, start
-from app.providers import build_providers
+from app.providers import build_registry
 
 
 def create_bot(bot_token: str, proxy_url: str | None = None) -> Bot:
@@ -24,12 +24,15 @@ async def main() -> None:
         raise RuntimeError("BOT_TOKEN is required")
     db = Database(settings.database_path)
     await db.connect()
-    providers_map = build_providers(settings)
+    provider_registry = build_registry(settings)
+    providers_map = provider_registry.providers
     if settings.default_provider not in providers_map:
         raise RuntimeError(f"DEFAULT_PROVIDER {settings.default_provider!r} is not configured")
 
     bot = create_bot(settings.bot_token, settings.proxy_url)
-    dp = Dispatcher(db=db, settings=settings, providers_map=providers_map)
+    dp = Dispatcher(
+        db=db, settings=settings, providers_map=providers_map, provider_registry=provider_registry
+    )
     for router in (start.router, providers.router, search.router, favorites.router, admin.router):
         dp.include_router(router)
     try:

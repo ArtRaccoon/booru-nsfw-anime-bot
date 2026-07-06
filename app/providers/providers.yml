@@ -1,0 +1,757 @@
+providers:
+  - name: "Danbooru"
+    slug: danbooru
+    engine: danbooru
+    base_url: "https://danbooru.donmai.us"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: true
+    notes: "Art"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "safebooru.donmai.us"
+    slug: safebooru_donmai
+    engine: danbooru
+    base_url: "https://safebooru.donmai.us"
+    api_url: null
+    sfw_status: sfw
+    category: anime_sfw
+    enabled_by_default: true
+    notes: "Uses danbooru database"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "sonohara"
+    slug: sonohara
+    engine: danbooru
+    base_url: "https://sonohara.donmai.us"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Uses danbooru database"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "hijiribe"
+    slug: hijiribe
+    engine: danbooru
+    base_url: "https://hijiribe.donmai.us"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Uses danbooru database"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "One Yukkuri Place"
+    slug: one_yukkuri_place
+    engine: danbooru
+    base_url: "http://yukkuri.shii.org"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Same as oyp.yunyah.com"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "Fancy Booru"
+    slug: fancy_booru
+    engine: danbooru
+    base_url: "http://dorkbooru.com"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Low quality art and tags"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "Bronibooru"
+    slug: bronibooru
+    engine: danbooru
+    base_url: "http://www.bronibooru.com"
+    api_url: null
+    sfw_status: mixed
+    category: pony
+    enabled_by_default: false
+    notes: "SFW? Art"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Beanbeeroo"
+    slug: beanbeeroo
+    engine: danbooru
+    base_url: "http://miya.nipah.moe"
+    api_url: null
+    sfw_status: unknown
+    category: memes
+    enabled_by_default: false
+    notes: "Memes"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "3dbooru"
+    slug: behoimi
+    engine: danbooru_old
+    base_url: "http://behoimi.org"
+    api_url: null
+    sfw_status: nsfw
+    category: photos
+    enabled_by_default: false
+    notes: "Old API"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "e621"
+    slug: e621
+    engine: danbooru_old
+    base_url: "https://e621.net"
+    api_url: null
+    sfw_status: nsfw
+    category: furry
+    enabled_by_default: false
+    notes: "Old API"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "e926"
+    slug: e926
+    engine: danbooru_old
+    base_url: "https://e926.net"
+    api_url: null
+    sfw_status: sfw
+    category: furry
+    enabled_by_default: true
+    notes: "Uses e621 database"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Hypnohub"
+    slug: hypnohub
+    engine: danbooru_old
+    base_url: "https://hypnohub.net"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Old API"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "ATFbooru"
+    slug: atfbooru
+    engine: danbooru_old
+    base_url: "https://booru.allthefallen.moe"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Old API"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "chan.sankakucomplex"
+    slug: chan_sankakucomplex
+    engine: danbooru_old
+    base_url: "https://chan.sankakucomplex.com"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Currently disabled"
+    requires_auth: false
+    broken: true
+    anime_relevant: true
+  - name: "idol.sankakucomplex"
+    slug: idol_sankakucomplex
+    engine: danbooru_old
+    base_url: "https://idol.sankakucomplex.com"
+    api_url: null
+    sfw_status: nsfw
+    category: photos
+    enabled_by_default: false
+    notes: "Currently disabled"
+    requires_auth: false
+    broken: true
+    anime_relevant: false
+  - name: "Derpibooru"
+    slug: derpibooru
+    engine: philomena
+    base_url: "https://derpibooru.org"
+    api_url: null
+    sfw_status: mixed
+    category: pony
+    enabled_by_default: false
+    notes: "Philomena API"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "verminbooru"
+    slug: verminbooru
+    engine: szurubooru
+    base_url: "https://booru.myverm.in"
+    api_url: null
+    sfw_status: mixed
+    category: unknown
+    enabled_by_default: false
+    notes: "Szurubooru API"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "gelbooru"
+    slug: gelbooru
+    engine: gelbooru_v02
+    base_url: "https://gelbooru.com"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Gelbooru v0.2"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "safebooru.org"
+    slug: safebooru_org
+    engine: gelbooru_v02
+    base_url: "https://safebooru.org"
+    api_url: null
+    sfw_status: sfw
+    category: anime_sfw
+    enabled_by_default: true
+    notes: "Uses gelbooru database?"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "Rule34"
+    slug: rule34
+    engine: gelbooru_v02
+    base_url: "https://rule34.xxx"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: true
+    notes: "Gelbooru v0.2"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "The Big Imageboard"
+    slug: tbib
+    engine: gelbooru_v02
+    base_url: "https://tbib.org"
+    api_url: null
+    sfw_status: nsfw
+    category: mixed
+    enabled_by_default: false
+    notes: "Combined booru.org databases?"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "MSPA booru"
+    slug: mspabooru
+    engine: gelbooru_v02
+    base_url: "http://mspabooru.com"
+    api_url: null
+    sfw_status: nsfw
+    category: mixed
+    enabled_by_default: false
+    notes: "Same as mspa.booru.org"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "PoniBooru"
+    slug: ponibooru
+    engine: gelbooru_v02
+    base_url: "http://pbooru.com"
+    api_url: null
+    sfw_status: unknown
+    category: pony
+    enabled_by_default: false
+    notes: "Gelbooru v0.2"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Xbooru"
+    slug: xbooru
+    engine: gelbooru_v01
+    base_url: "https://xbooru.com"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Gelbooru v0.1"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "konachan"
+    slug: konachan
+    engine: moebooru
+    base_url: "https://konachan.com"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: true
+    notes: "Moebooru"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "konachan.net"
+    slug: konachan_net
+    engine: moebooru
+    base_url: "https://konachan.net"
+    api_url: null
+    sfw_status: sfw
+    category: anime_sfw
+    enabled_by_default: false
+    notes: "Uses konachan database"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "yande.re"
+    slug: yandere
+    engine: moebooru
+    base_url: "https://yande.re"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: true
+    notes: "Moebooru"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "sakugabooru"
+    slug: sakugabooru
+    engine: moebooru
+    base_url: "https://www.sakugabooru.com"
+    api_url: null
+    sfw_status: mixed
+    category: anime_sfw
+    enabled_by_default: true
+    notes: "Videos"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "evbooru"
+    slug: evbooru
+    engine: moebooru
+    base_url: "https://evbooru.com"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Moebooru"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "genboard"
+    slug: genboard
+    engine: moebooru
+    base_url: "https://img.genshiken-itb.org"
+    api_url: null
+    sfw_status: sfw
+    category: anime_sfw
+    enabled_by_default: false
+    notes: "Moebooru"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "Lolibooru"
+    slug: lolibooru
+    engine: moebooru
+    base_url: "https://lolibooru.moe"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Moebooru"
+    requires_auth: false
+    broken: false
+    anime_relevant: true
+  - name: "Megabooru"
+    slug: megabooru
+    engine: shimmie
+    base_url: "https://example.com/megabooru"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Hard55"
+    slug: hard55
+    engine: shimmie
+    base_url: "https://example.com/hard55"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Analbooru"
+    slug: analbooru
+    engine: shimmie
+    base_url: "https://example.com/analbooru"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Zombooru"
+    slug: zombooru
+    engine: shimmie
+    base_url: "https://example.com/zombooru"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Boorufurry"
+    slug: boorufurry
+    engine: shimmie
+    base_url: "https://example.com/boorufurry"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Burrowowl"
+    slug: burrowowl
+    engine: shimmie
+    base_url: "https://example.com/burrowowl"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Cjdavies"
+    slug: cjdavies
+    engine: shimmie
+    base_url: "https://example.com/cjdavies"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Shimmie Testbed"
+    slug: shimmie_testbed
+    engine: shimmie
+    base_url: "https://example.com/shimmie_testbed"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Lockdraw"
+    slug: lockdraw
+    engine: shimmie
+    base_url: "https://example.com/lockdraw"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Milbooru"
+    slug: milbooru
+    engine: shimmie
+    base_url: "https://example.com/milbooru"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Oceanfalls"
+    slug: oceanfalls
+    engine: shimmie
+    base_url: "https://example.com/oceanfalls"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Soulcalibooru"
+    slug: soulcalibooru
+    engine: shimmie
+    base_url: "https://example.com/soulcalibooru"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Taskforce Moe"
+    slug: taskforce_moe
+    engine: shimmie
+    base_url: "https://example.com/taskforce_moe"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Cdrr Board"
+    slug: cdrr_board
+    engine: shimmie
+    base_url: "https://example.com/cdrr_board"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Roa Booru"
+    slug: roa_booru
+    engine: shimmie
+    base_url: "https://example.com/roa_booru"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Kusubooru"
+    slug: kusubooru
+    engine: shimmie
+    base_url: "https://example.com/kusubooru"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Dantes Archive"
+    slug: dantes_archive
+    engine: shimmie
+    base_url: "https://example.com/dantes_archive"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Creativity Weekly"
+    slug: creativity_weekly
+    engine: shimmie
+    base_url: "https://example.com/creativity_weekly"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Fanservice Fan"
+    slug: fanservice_fan
+    engine: shimmie
+    base_url: "https://example.com/fanservice_fan"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Rule34Yaoi Shimmie"
+    slug: rule34yaoi_shimmie
+    engine: shimmie
+    base_url: "https://example.com/rule34yaoi_shimmie"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Rule34 Paheal"
+    slug: rule34_paheal
+    engine: shimmie
+    base_url: "https://example.com/rule34_paheal"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Rule34Hentai"
+    slug: rule34hentai
+    engine: shimmie
+    base_url: "https://example.com/rule34hentai"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Giantessbooru"
+    slug: giantessbooru
+    engine: shimmie
+    base_url: "https://example.com/giantessbooru"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Tentaclerape"
+    slug: tentaclerape
+    engine: shimmie
+    base_url: "https://example.com/tentaclerape"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Wh40Kart"
+    slug: wh40kart
+    engine: shimmie
+    base_url: "https://example.com/wh40kart"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "Shimmie 4Chanhouse"
+    slug: shimmie_4chanhouse
+    engine: shimmie
+    base_url: "https://example.com/shimmie_4chanhouse"
+    api_url: null
+    sfw_status: unknown
+    category: unknown
+    enabled_by_default: false
+    notes: "Shimmie catalog entry"
+    requires_auth: false
+    broken: false
+    anime_relevant: false
+  - name: "nik.bot.nu"
+    slug: nik_bot_nu
+    engine: unknown
+    base_url: "https://nik.bot.nu"
+    api_url: null
+    sfw_status: nsfw
+    category: mixed
+    enabled_by_default: false
+    notes: "Scraper"
+    requires_auth: false
+    broken: true
+    anime_relevant: true
+  - name: "nozomi"
+    slug: nozomi
+    engine: unknown
+    base_url: "https://nozomi.la"
+    api_url: null
+    sfw_status: nsfw
+    category: anime_nsfw
+    enabled_by_default: false
+    notes: "Unknown/custom API"
+    requires_auth: false
+    broken: true
+    anime_relevant: true
+  - name: "karabako"
+    slug: karabako
+    engine: unknown
+    base_url: "http://www.karabako.net"
+    api_url: null
+    sfw_status: sfw
+    category: anime_sfw
+    enabled_by_default: false
+    notes: "No known API"
+    requires_auth: false
+    broken: true
+    anime_relevant: true
+  - name: "E-Shuushuu"
+    slug: e_shuushuu
+    engine: unknown
+    base_url: "https://e-shuushuu.net"
+    api_url: null
+    sfw_status: sfw
+    category: anime_sfw
+    enabled_by_default: false
+    notes: "No api?"
+    requires_auth: false
+    broken: true
+    anime_relevant: true
+  - name: "Zerochan"
+    slug: zerochan
+    engine: unknown
+    base_url: "https://www.zerochan.net"
+    api_url: null
+    sfw_status: sfw
+    category: anime_sfw
+    enabled_by_default: false
+    notes: "No compatible adapter"
+    requires_auth: false
+    broken: true
+    anime_relevant: true
+  - name: "anime-pictures"
+    slug: anime_pictures
+    engine: unknown
+    base_url: "https://anime-pictures.net"
+    api_url: null
+    sfw_status: sfw
+    category: anime_sfw
+    enabled_by_default: false
+    notes: "No api?"
+    requires_auth: false
+    broken: true
+    anime_relevant: true
