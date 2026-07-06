@@ -8,6 +8,7 @@ from app.config import get_settings
 from app.database import Database
 from app.handlers import admin, favorites, menu, providers, search, start
 from app.providers import build_registry
+from app.telegram_setup import setup_telegram_ui
 
 
 def create_bot(bot_token: str, proxy_url: str | None = None) -> Bot:
@@ -39,6 +40,8 @@ async def main() -> None:
     dp = Dispatcher(
         db=db, settings=settings, providers_map=providers_map, provider_registry=provider_registry
     )
+    await setup_telegram_ui(bot)
+
     for router in (
         start.router,
         menu.router,

@@ -19,13 +19,21 @@ A modular Python 3.11+ Telegram bot for searching and sending adult NSFW anime i
 - `/random` — fetch a random explicit result from the selected provider.
 - `/search <tags>` — search selected provider by tags.
 - `/providers` — show provider picker.
-- `/set_provider <provider>` — select provider by name.
+- `/provider <provider>` — select provider by name.
 - `/favorites` — acknowledge saved favorites.
 - `/history` — acknowledge recorded search history.
 - `/admin` — show admin commands.
+- `/settings` — show current settings.
 - `/stats` — show database totals for admins.
+- `/help` — show short command help.
 
 Admin-only placeholders are included for `/broadcast`, `/reload_providers`, and `/set_global_provider <provider>`.
+
+## Telegram UI synchronization
+
+On startup, the bot synchronizes its Telegram command list and the blue bottom menu button through the Telegram Bot API. It publishes the current Russian command descriptions for the default scope and all private chats, then switches the chat menu button to `MenuButtonCommands` so Telegram opens the up-to-date command list instead of stale provider/menu labels from older versions.
+
+The synchronization is best-effort: if Telegram rejects or temporarily fails `set_my_commands` or `set_chat_menu_button`, startup continues and a warning is written to the application log.
 
 ## Setup
 
