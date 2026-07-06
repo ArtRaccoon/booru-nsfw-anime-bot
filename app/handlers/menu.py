@@ -1,5 +1,6 @@
 from aiogram import Router
-from aiogram.types import CallbackQuery
+from aiogram.filters import Command
+from aiogram.types import CallbackQuery, Message
 
 from app.keyboards import admin_keyboard, settings_keyboard
 from app.safety import is_admin
@@ -7,19 +8,33 @@ from app.safety import is_admin
 router = Router()
 
 
+def settings_text(provider: str, confirmed: bool, daily_limit: int, rate_limit_seconds: int) -> str:
+    return (
+        "⚙️ Настройки\n"
+        f"Текущий источник: {provider}\n"
+        f"Дневной лимит: {daily_limit}\n"
+        f"Кулдаун: {rate_limit_seconds} сек.\n"
+        f"18+: {'подтверждено' if confirmed else 'не подтверждено'}"
+    )
+
+
 @router.callback_query(lambda c: c.data == "settings")
 async def settings_menu(callback: CallbackQuery, db, settings) -> None:
     provider = await db.get_provider(callback.from_user.id, settings.default_provider)
     confirmed = await db.is_confirmed(callback.from_user.id)
-    text = (
-        "⚙️ Настройки\n"
-        f"Текущий источник: {provider}\n"
-        f"Дневной лимит: {settings.daily_limit}\n"
-        f"Кулдаун: {settings.rate_limit_seconds} сек.\n"
-        f"18+: {'подтверждено' if confirmed else 'не подтверждено'}"
-    )
+    text = settings_text(provider, confirmed, settings.daily_limit, settings.rate_limit_seconds)
     await callback.message.edit_text(text, reply_markup=settings_keyboard())
     await callback.answer()
+
+
+@router.message(Command("settings"))
+async def settings_command(message: Message, db, settings) -> None:
+    provider = await db.get_provider(message.from_user.id, settings.default_provider)
+    confirmed = await db.is_confirmed(message.from_user.id)
+    await message.answer(
+        settings_text(provider, confirmed, settings.daily_limit, settings.rate_limit_seconds),
+        reply_markup=settings_keyboard(),
+    )
 
 
 @router.callback_query(lambda c: c.data == "clear_history")

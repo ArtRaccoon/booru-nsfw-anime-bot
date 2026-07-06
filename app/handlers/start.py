@@ -1,9 +1,10 @@
 from aiogram import Router
-from aiogram.filters import CommandStart
+from aiogram.filters import Command, CommandStart
 from aiogram.types import CallbackQuery, Message
 
 from app.keyboards import age_gate_keyboard, main_menu_keyboard
 from app.safety import is_admin
+from app.telegram_setup import HELP_TEXT
 from app.ui.texts import AGE_GATE, MAIN_MENU
 
 router = Router()
@@ -53,3 +54,8 @@ async def main_menu(callback: CallbackQuery, settings) -> None:
         ),
     )
     await callback.answer()
+
+
+@router.message(Command("help"))
+async def help_command(message: Message) -> None:
+    await message.answer(HELP_TEXT)
