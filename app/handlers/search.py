@@ -9,6 +9,7 @@ from app.models import BooruPost
 from app.providers.registry import fallback_search
 from app.safety import LimitState, can_search, record_search, validate_tags
 from app.ui.sessions import SearchSession, callback_sessions, parse_callback
+from app.ui.tags import format_full_tags_messages, format_tag_preview
 from app.ui.texts import ALL_PROVIDERS_FAILED, SEARCH_PROMPT, SESSION_EXPIRED
 
 router = Router()
@@ -33,7 +34,7 @@ async def require_ready(
 
 
 def caption_for(post: BooruPost) -> str:
-    tags = ", ".join(post.tags[:12]) or "—"
+    tags = format_tag_preview(" ".join(post.tags))
     return (
         f"Источник: {post.provider}\n"
         f"ID: {post.post_id}\n"
@@ -54,6 +55,8 @@ async def send_post(target: Message, key: str, post: BooruPost, page: int) -> No
             f"Не удалось отправить изображение. Ссылка: {post.display_url}",
             reply_markup=post_keyboard(key, page),
         )
+    for tags_message in format_full_tags_messages(" ".join(post.tags)):
+        await target.answer(tags_message)
 
 
 async def run_search(
