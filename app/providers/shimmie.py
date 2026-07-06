@@ -1,7 +1,5 @@
 from typing import Any
 
-import httpx
-
 from app.models import BooruPost
 from app.providers.base import BaseProvider
 
@@ -19,19 +17,14 @@ class ShimmieProvider(BaseProvider):
             ),
         ]
         for path, params in endpoints:
-            try:
-                resp = await self.client.get(f"{self.base_url}{path}", params=params)
-                resp.raise_for_status()
-                data = resp.json()
-            except (httpx.HTTPError, ValueError):
+            resp = await self.safe_get(f"{self.base_url}{path}", params=params)
+            if resp is None:
                 continue
+            data = self.safe_json(resp)
             posts = data.get("posts", data.get("post", data)) if isinstance(data, dict) else data
-            if posts:
-                return [
-                    self.normalize_post(item)
-                    for item in posts
-                    if item.get("file_url") or item.get("image_url")
-                ]
+            result = self.safe_normalize_many(posts, ("file_url", "image_url", "url"))
+            if result:
+                return result
         return []
 
     def normalize_post(self, raw: dict[str, Any]) -> BooruPost:

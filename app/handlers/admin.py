@@ -18,7 +18,8 @@ async def require_admin(message: Message, settings) -> bool:
 async def admin(message: Message, settings) -> None:
     if await require_admin(message, settings):
         await message.answer(
-            "Admin commands: /stats, /broadcast <text>, /reload_providers, /test_provider <slug>, "
+            "Admin commands: /stats, /broadcast <text>, /provider_info <slug>, /reload_providers, "
+            "/test_provider <slug>, /list_disabled, /list_broken, /list_auth_required, "
             "/enable_provider <slug>, /disable_provider <slug>, /set_global_provider <provider>"
         )
 
@@ -81,7 +82,10 @@ async def test_provider(message: Message, settings, provider_registry) -> None:
         await message.answer("Unknown provider.")
         return
     provider = provider_registry.providers.get(slug) or provider_registry.build_provider(slug)
-    posts = await provider.search("", 1, 1)
+    try:
+        posts = await provider.search("", 1, 1)
+    except Exception:
+        posts = []
     if slug not in provider_registry.providers:
         await provider.close()
     await message.answer(f"{slug}: {'OK' if posts else 'No results or unavailable'}")
@@ -113,3 +117,26 @@ async def disable_provider(message: Message, settings, provider_registry, provid
         await message.answer(f"Disabled provider {slug}.")
     else:
         await message.answer("Unknown provider.")
+
+@router.message(Command("list_disabled"))
+async def list_disabled(message: Message, settings, provider_registry) -> None:
+    if not await require_admin(message, settings):
+        return
+    slugs = [slug for slug in provider_registry.configs if slug not in provider_registry.providers]
+    await message.answer("Disabled providers:\n" + ("\n".join(slugs[:80]) or "None"))
+
+
+@router.message(Command("list_broken"))
+async def list_broken(message: Message, settings, provider_registry) -> None:
+    if not await require_admin(message, settings):
+        return
+    slugs = [slug for slug, cfg in provider_registry.configs.items() if cfg.broken]
+    await message.answer("Broken providers:\n" + ("\n".join(slugs[:80]) or "None"))
+
+
+@router.message(Command("list_auth_required"))
+async def list_auth_required(message: Message, settings, provider_registry) -> None:
+    if not await require_admin(message, settings):
+        return
+    slugs = [slug for slug, cfg in provider_registry.configs.items() if cfg.requires_auth]
+    await message.answer("Auth-required providers:\n" + ("\n".join(slugs[:80]) or "None"))

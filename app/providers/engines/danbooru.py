@@ -12,4 +12,4 @@ class DanbooruOldProvider(DanbooruProvider):
         data = self.safe_json(resp)
         if not isinstance(data, list):
             return []
-        return [self.normalize_post(item) for item in data if item.get("file_url")]
+        return self.safe_normalize_many(data, ("file_url", "large_file_url"))
