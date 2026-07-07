@@ -100,12 +100,37 @@ class ProviderRegistry:
             return True
         return slug in self.configs
 
-    async def reload(self) -> None:
+    async def add_enabled_candidates(self, db) -> None:
+        rows = await db.enabled_available_candidates()
+        for row in rows:
+            slug = row["slug"]
+            if slug in self.configs:  # curated providers win conflicts
+                continue
+            cfg = ProviderConfig(
+                name=row["name"],
+                slug=slug,
+                engine=row["engine"] or "unknown",
+                base_url=row["base_url"],
+                api_url=row["api_url"],
+                sfw_status=row["sfw_status"] or "unknown",
+                category=row["category"] or "unknown",
+                enabled_by_default=True,
+                notes=row["notes"] or "",
+                requires_auth=bool(row["requires_auth"]),
+                broken=bool(row["broken"]),
+                anime_relevant=bool(row["anime_relevant"]),
+            )
+            self.configs[slug] = cfg
+            self.enable(slug)
+
+    async def reload(self, db=None) -> None:
         await self.close()
         fresh = self.load(proxy_url=self.proxy_url)
         self.configs = fresh.configs
         self.client = fresh.client
         self.providers = fresh.providers
+        if db is not None:
+            await self.add_enabled_candidates(db)
 
     async def close(self) -> None:
         await self.client.aclose()
@@ -132,6 +157,9 @@ def engine_class(engine: str) -> type[BaseProvider]:
         "shimmie": ShimmieProvider,
         "philomena": PhilomenaProvider,
         "szurubooru": SzurubooruProvider,
+        "rule34": GelbooruProvider,
+        "e621": DanbooruProvider,
+        "e926": DanbooruProvider,
     }
     if engine not in engines:
         raise ValueError(f"No adapter for provider engine {engine!r}")

@@ -103,13 +103,26 @@ def split_tag_blocks(
 async def find_unique_post(db, providers_map, settings: dict[str, Any]) -> BooruPost | None:
     target = settings["target_chat_id"]
     configured_provider = (settings.get("provider") or "auto").strip()
+    strategy = (settings.get("provider_strategy") or "round_robin").strip()
     providers = providers_map
     if (
-        configured_provider
+        strategy == "selected"
         and configured_provider != "auto"
         and configured_provider in providers_map
     ):
         providers = {configured_provider: providers_map[configured_provider]}
+    elif strategy == "fallback":
+        ordered = {}
+        if configured_provider != "auto" and configured_provider in providers_map:
+            ordered[configured_provider] = providers_map[configured_provider]
+        for slug, provider in providers_map.items():
+            ordered.setdefault(slug, provider)
+        providers = ordered
+    elif strategy == "round_robin" and providers_map:
+        items = list(providers_map.items())
+        idx = await db.next_channel_provider_cursor(len(items))
+        rotated = items[idx:] + items[:idx]
+        providers = dict(rotated)
     query = tags_for_mode(settings.get("mode", "sfw"), settings.get("tags"))
     for _ in range(10):
         provider, posts = await fallback_search(providers, query, 1, 1)

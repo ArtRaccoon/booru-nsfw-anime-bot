@@ -11,7 +11,12 @@ from app.channel_posting import (
     resolve_channel_target,
     test_channel,
 )
-from app.keyboards import channel_mode_keyboard, channel_posting_keyboard, channel_provider_keyboard
+from app.keyboards import (
+    channel_mode_keyboard,
+    channel_posting_keyboard,
+    channel_provider_keyboard,
+    channel_strategy_keyboard,
+)
 from app.safety import is_admin
 
 router = Router()
@@ -60,6 +65,7 @@ async def channel_status_text(db, row=None) -> str:
         f"Канал: {row['target_chat_id'] or 'не задан'}\n"
         f"Режим: {str(row['mode']).upper()}\n"
         f"Источник: {row['provider'] or 'auto'}\n"
+        f"Стратегия источников: {row['provider_strategy'] or 'round_robin'}\n"
         f"Теги: {row['tags'] or '-'}\n"
         f"Интервал: {row['interval_minutes']} мин\n"
         f"Последний пост: {row['last_posted_at'] or stats['last'] or '-'}\n"
@@ -142,6 +148,20 @@ async def channel_provider(message: Message, db, settings, providers_map) -> Non
         return
     await db.update_group_posting_settings(provider=provider)
     await message.answer(f"Источник: {provider}")
+
+
+@router.message(Command("channel_provider_strategy"))
+async def channel_provider_strategy(message: Message, db, settings) -> None:
+    if not await require_admin(message, settings):
+        return
+    strategy = _arg(message)
+    if strategy not in {"selected", "round_robin", "fallback"}:
+        await message.answer(
+            "Использование: /channel_provider_strategy selected|round_robin|fallback"
+        )
+        return
+    await db.update_group_posting_settings(provider_strategy=strategy)
+    await message.answer(f"Стратегия источников: {strategy}")
 
 
 @router.message(Command("channel_interval", "group_interval"))
@@ -237,6 +257,7 @@ async def admin_channel_posting(callback: CallbackQuery, db, settings) -> None:
             "channel_tags",
             "channel_interval",
             "channel_mode",
+            "channel_strategy",
         }
     )
 )
@@ -255,6 +276,10 @@ async def channel_buttons(
         await refresh(callback.message, db)
     elif data == "channel_mode":
         await callback.message.edit_text("Выбери режим:", reply_markup=channel_mode_keyboard())
+    elif data == "channel_strategy":
+        await callback.message.edit_text(
+            "Выбери стратегию источников:", reply_markup=channel_strategy_keyboard()
+        )
     elif data == "channel_bind":
         await state.set_state(ChannelPostingFSM.bind)
         await callback.message.answer(
@@ -297,6 +322,18 @@ async def set_mode(callback: CallbackQuery, db, settings) -> None:
     await db.update_group_posting_settings(mode=callback.data.split(":", 1)[1])
     await refresh(callback.message, db)
     await callback.answer()
+
+
+@router.callback_query(F.data.startswith("channel_set_strategy:"))
+async def set_channel_strategy(callback: CallbackQuery, db, settings) -> None:
+    if not is_admin(callback.from_user.id, settings.admin_ids):
+        await callback.answer("Admin only.", show_alert=True)
+        return
+    strategy = callback.data.split(":", 1)[1]
+    await db.update_group_posting_settings(provider_strategy=strategy)
+    await callback.message.edit_text(
+        await channel_status_text(db), reply_markup=channel_posting_keyboard()
+    )
 
 
 @router.callback_query(F.data.startswith("channel_provider:"))

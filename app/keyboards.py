@@ -134,6 +134,7 @@ def settings_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🧭 Сменить источник", callback_data="providers_page:0")],
+            [InlineKeyboardButton(text="🌐 Режим источников", callback_data="source_mode_menu")],
             [InlineKeyboardButton(text="🧹 Очистить историю", callback_data="clear_history")],
             [InlineKeyboardButton(text="🏠 Меню", callback_data="main_menu")],
         ]
@@ -147,6 +148,7 @@ def admin_keyboard() -> InlineKeyboardMarkup:
         ("👤 Теги пользователя", "admin_user_tags"),
         ("🔎 Поиски пользователя", "admin_user_searches"),
         ("📢 Постинг в канал", "admin_channel_posting"),
+        ("🗂 Каталог источников", "admin_catalog"),
         ("🛰 Групповой постинг", "admin_channel_posting"),
         ("🧪 Тест источника", "admin_test_provider"),
         ("🔄 Перезагрузить источники", "reload_providers"),
@@ -169,7 +171,8 @@ def channel_posting_keyboard() -> InlineKeyboardMarkup:
         [("▶️ Включить", "channel_enable"), ("⏸ Выключить", "channel_disable")],
         [("🚀 Пост сейчас", "channel_post_now"), ("🧪 Тест канала", "channel_test")],
         [("🎚 Режим", "channel_mode"), ("🏷 Теги", "channel_tags")],
-        [("🌐 Источник", "channel_provider:0"), ("⏱ Интервал", "channel_interval")],
+        [("🌐 Источник", "channel_provider:0"), ("🌐 Стратегия источников", "channel_strategy")],
+        [("⏱ Интервал", "channel_interval")],
         [("📜 История", "channel_history"), ("🧹 Сброс истории", "channel_reset_history")],
         [("🔗 Привязать", "channel_bind"), ("🏠 Меню", "admin_menu")],
     ]
@@ -217,3 +220,48 @@ def channel_provider_keyboard(
 
 def group_posting_keyboard() -> InlineKeyboardMarkup:
     return channel_posting_keyboard()
+
+
+def catalog_keyboard() -> InlineKeyboardMarkup:
+    rows = [
+        [("📥 Загрузить каталог", "catalog:import"), ("🧪 Проверить все", "catalog:check_all")],
+        [("✅ Доступные", "catalog:available"), ("💤 Непроверенные", "catalog:unchecked")],
+        [("💥 Недоступные", "catalog:broken"), ("🔍 Инфо по slug", "catalog:info")],
+        [("✅ Включить", "catalog:enable"), ("🚫 Отключить", "catalog:disable")],
+        [("🔄 Перезагрузить реестр", "reload_providers"), ("🏠 Меню", "admin_menu")],
+    ]
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=t, callback_data=d) for t, d in r] for r in rows
+        ]
+    )
+
+
+def source_mode_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="Один источник", callback_data="source_mode:selected")],
+            [InlineKeyboardButton(text="По очереди", callback_data="source_mode:rotation")],
+            [InlineKeyboardButton(text="Запасной перебор", callback_data="source_mode:fallback")],
+            [InlineKeyboardButton(text="🏠 Меню", callback_data="main_menu")],
+        ]
+    )
+
+
+def channel_strategy_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Один источник", callback_data="channel_set_strategy:selected"
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    text="По очереди", callback_data="channel_set_strategy:round_robin"
+                )
+            ],
+            [InlineKeyboardButton(text="Fallback", callback_data="channel_set_strategy:fallback")],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_channel_posting")],
+        ]
+    )

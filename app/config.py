@@ -18,6 +18,15 @@ class Settings(BaseSettings):
     daily_limit: int = Field(default=50, alias="DAILY_LIMIT")
     result_limit: int = Field(default=30, alias="RESULT_LIMIT")
     proxy_url: str | None = Field(default=None, alias="PROXY_URL")
+    booru_catalog_source_url: str = Field(
+        default="https://raw.githubusercontent.com/red-tails/list-of-boorus/master/README.md",
+        alias="BOORU_CATALOG_SOURCE_URL",
+    )
+    booru_catalog_probe_concurrency: int = Field(default=5, alias="BOORU_CATALOG_PROBE_CONCURRENCY")
+    booru_catalog_timeout_seconds: int = Field(default=10, alias="BOORU_CATALOG_TIMEOUT_SECONDS")
+    booru_user_agent: str = Field(
+        default="ArtRaccoonBooruBot/0.1 (+Telegram bot)", alias="BOORU_USER_AGENT"
+    )
 
     danbooru_base_url: str = Field(default="https://danbooru.donmai.us", alias="DANBOORU_BASE_URL")
     gelbooru_base_url: str = Field(default="https://gelbooru.com", alias="GELBOORU_BASE_URL")
