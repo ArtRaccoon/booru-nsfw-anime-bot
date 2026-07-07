@@ -298,6 +298,99 @@ class Database:
             )
         ).fetchall()
 
+    async def list_provider_candidates_for_check(
+        self,
+        *,
+        statuses: list[str] | tuple[str, ...] | None = None,
+        engine: str | None = None,
+        limit: int = 25,
+    ):
+        assert self.conn
+        clauses = []
+        params: list[object] = []
+        if statuses:
+            clauses.append(f"availability_status IN ({','.join('?' for _ in statuses)})")
+            params.extend(statuses)
+        if engine:
+            clauses.append("engine=?")
+            params.append(engine)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        params.append(limit)
+        return await (
+            await self.conn.execute(
+                f"SELECT * FROM provider_candidates{where} ORDER BY id LIMIT ?", params
+            )
+        ).fetchall()
+
+    async def count_provider_candidates_for_check(
+        self, *, statuses: list[str] | tuple[str, ...] | None = None, engine: str | None = None
+    ) -> int:
+        assert self.conn
+        clauses = []
+        params: list[object] = []
+        if statuses:
+            clauses.append(f"availability_status IN ({','.join('?' for _ in statuses)})")
+            params.extend(statuses)
+        if engine:
+            clauses.append("engine=?")
+            params.append(engine)
+        where = " WHERE " + " AND ".join(clauses) if clauses else ""
+        row = await (
+            await self.conn.execute(f"SELECT COUNT(*) c FROM provider_candidates{where}", params)
+        ).fetchone()
+        return int(row["c"])
+
+    async def provider_catalog_report(self) -> dict:
+        assert self.conn
+        by_engine = await (
+            await self.conn.execute(
+                "SELECT COALESCE(engine, 'unknown') engine, COUNT(*) c "
+                "FROM provider_candidates "
+                "GROUP BY COALESCE(engine, 'unknown') ORDER BY c DESC"
+            )
+        ).fetchall()
+        available_engines = await (
+            await self.conn.execute(
+                "SELECT COALESCE(engine, 'unknown') engine, COUNT(*) c "
+                "FROM provider_candidates WHERE availability_status='available' "
+                "GROUP BY COALESCE(engine, 'unknown') ORDER BY c DESC LIMIT 5"
+            )
+        ).fetchall()
+        return {
+            "counts": await self.provider_catalog_counts(),
+            "by_engine": {r["engine"]: int(r["c"]) for r in by_engine},
+            "top_available_engines": {r["engine"]: int(r["c"]) for r in available_engines},
+        }
+
+    async def enable_available_candidates(self, engine: str | None = None, limit: int = 50):
+        assert self.conn
+        if engine:
+            rows = await (
+                await self.conn.execute(
+                    "SELECT * FROM provider_candidates "
+                    "WHERE availability_status='available' AND enabled=0 AND engine=? "
+                    "ORDER BY slug LIMIT ?",
+                    (engine, limit),
+                )
+            ).fetchall()
+        else:
+            rows = await (
+                await self.conn.execute(
+                    "SELECT * FROM provider_candidates "
+                    "WHERE availability_status='available' AND enabled=0 "
+                    "ORDER BY slug LIMIT ?",
+                    (limit,),
+                )
+            ).fetchall()
+        for row in rows:
+            await self.conn.execute(
+                "UPDATE provider_candidates "
+                "SET enabled=1, updated_at=CURRENT_TIMESTAMP WHERE slug=?",
+                (row["slug"],),
+            )
+        await self.conn.commit()
+        return rows
+
     async def get_provider_candidate(self, slug: str):
         assert self.conn
         return await (
