@@ -224,10 +224,11 @@ def group_posting_keyboard() -> InlineKeyboardMarkup:
 
 def catalog_keyboard() -> InlineKeyboardMarkup:
     rows = [
-        [("📥 Загрузить каталог", "catalog:import"), ("🧪 Проверить все", "catalog:check_all")],
-        [("✅ Доступные", "catalog:available"), ("💤 Непроверенные", "catalog:unchecked")],
-        [("💥 Недоступные", "catalog:broken"), ("🔍 Инфо по slug", "catalog:info")],
-        [("✅ Включить", "catalog:enable"), ("🚫 Отключить", "catalog:disable")],
+        [("📥 Загрузить каталог", "catalog:import"), ("🧪 Проверить 25", "catalog:check_batch")],
+        [("▶️ Продолжить", "catalog:resume"), ("🛑 Стоп", "catalog:stop")],
+        [("✅ Доступные", "catalog:available"), ("💥 Недоступные", "catalog:broken")],
+        [("🧬 По движку", "catalog:engine"), ("📊 Отчёт", "catalog:report")],
+        [("✅ Включить доступные", "catalog:enable_available")],
         [("🔄 Перезагрузить реестр", "reload_providers"), ("🏠 Меню", "admin_menu")],
     ]
     return InlineKeyboardMarkup(
