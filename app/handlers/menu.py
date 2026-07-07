@@ -2,7 +2,7 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
-from app.keyboards import admin_keyboard, group_posting_keyboard, settings_keyboard
+from app.keyboards import admin_keyboard, settings_keyboard
 from app.safety import is_admin
 
 router = Router()
@@ -129,30 +129,3 @@ async def admin_stats_help(callback: CallbackQuery, settings) -> None:
     await callback.answer(
         "Используй /tag_stats_user <telegram_id> или /user_searches <telegram_id>.", show_alert=True
     )
-
-
-@router.callback_query(lambda c: c.data == "admin_group_posting")
-async def admin_group_posting(callback: CallbackQuery, settings) -> None:
-    if not is_admin(callback.from_user.id, settings.admin_ids):
-        await callback.answer("Только для админа.", show_alert=True)
-        return
-    await callback.message.edit_text("🛰 Групповой постинг", reply_markup=group_posting_keyboard())
-    await callback.answer()
-
-
-@router.callback_query(lambda c: c.data and c.data.endswith("_help"))
-async def group_help(callback: CallbackQuery, settings) -> None:
-    if not is_admin(callback.from_user.id, settings.admin_ids):
-        await callback.answer("Только для админа.", show_alert=True)
-        return
-    commands = {
-        "group_bind_help": "/group_bind <chat_id>",
-        "group_enable_help": "/group_enable",
-        "group_disable_help": "/group_disable",
-        "group_mode_help": "/group_mode sfw|nsfw|mixed",
-        "group_tags_help": "/group_tags <tags>",
-        "group_interval_help": "/group_interval <minutes>",
-        "group_post_now_help": "/group_post_now",
-        "group_history_help": "/group_history",
-    }
-    await callback.answer(commands.get(callback.data, "Команда недоступна"), show_alert=True)

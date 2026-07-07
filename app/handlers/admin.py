@@ -22,7 +22,7 @@ async def admin(message: Message, settings) -> None:
             "/test_provider <slug>, /list_disabled, /list_broken, /list_auth_required, "
             "/enable_provider <slug>, /disable_provider <slug>, /set_global_provider <provider>, "
             "/tag_stats, /tag_stats_user <telegram_id>, /tag_users <tag>, "
-            "/user_searches <telegram_id>, /group_status"
+            "/user_searches <telegram_id>, /channel_status"
         )
 
 

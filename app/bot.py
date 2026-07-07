@@ -5,9 +5,9 @@ from contextlib import suppress
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 
+from app.channel_posting import start_scheduler
 from app.config import get_settings
 from app.database import Database
-from app.group_posting import start_scheduler
 from app.handlers import admin, favorites, group_posting, menu, providers, search, start
 from app.providers import build_registry
 from app.telegram_setup import setup_telegram_ui
