@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     )
     booru_catalog_probe_concurrency: int = Field(default=5, alias="BOORU_CATALOG_PROBE_CONCURRENCY")
     booru_catalog_timeout_seconds: int = Field(default=10, alias="BOORU_CATALOG_TIMEOUT_SECONDS")
+    booru_catalog_check_all_max: int = Field(default=100, alias="BOORU_CATALOG_CHECK_ALL_MAX")
     booru_user_agent: str = Field(
         default="ArtRaccoonBooruBot/0.1 (+Telegram bot)", alias="BOORU_USER_AGENT"
     )
