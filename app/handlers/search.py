@@ -220,7 +220,9 @@ async def run_search(
         ordered.setdefault(slug, candidate)
     provider, posts = await fallback_search(ordered, query, settings.result_limit, page)
     record_search(state)
-    await db.add_history(user_id, provider.name if provider else provider_name, query)
+    selected_provider = provider.name if provider else provider_name
+    await db.add_history(user_id, selected_provider, query)
+    await db.add_tag_usage(user_id, username, selected_provider, query, query.split())
     if not posts:
         if update_existing and session_key:
             session = callback_sessions.get(session_key, user_id)

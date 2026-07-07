@@ -143,6 +143,10 @@ def settings_keyboard() -> InlineKeyboardMarkup:
 def admin_keyboard() -> InlineKeyboardMarkup:
     labels = [
         ("📊 Статистика", "admin_stats"),
+        ("🏷 Статистика тегов", "admin_tag_stats"),
+        ("👤 Теги пользователя", "admin_user_tags"),
+        ("🔎 Поиски пользователя", "admin_user_searches"),
+        ("🛰 Групповой постинг", "admin_group_posting"),
         ("🧪 Тест источника", "admin_test_provider"),
         ("🔄 Перезагрузить источники", "reload_providers"),
         ("✅ Включить источник", "admin_enable_provider"),
@@ -150,6 +154,25 @@ def admin_keyboard() -> InlineKeyboardMarkup:
         ("💤 Отключённые", "admin_providers:disabled"),
         ("💥 Сломанные", "admin_providers:broken"),
         ("🧩 Требуют авторизацию", "admin_providers:auth"),
+        ("🏠 Меню", "main_menu"),
+    ]
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text=text, callback_data=data)] for text, data in labels
+        ]
+    )
+
+
+def group_posting_keyboard() -> InlineKeyboardMarkup:
+    labels = [
+        ("🔗 Привязать группу", "group_bind_help"),
+        ("▶️ Включить", "group_enable_help"),
+        ("⏸ Выключить", "group_disable_help"),
+        ("🎚 Режим SFW/NSFW/MIXED", "group_mode_help"),
+        ("🏷 Теги", "group_tags_help"),
+        ("⏱ Интервал", "group_interval_help"),
+        ("🚀 Пост сейчас", "group_post_now_help"),
+        ("📜 История", "group_history_help"),
         ("🏠 Меню", "main_menu"),
     ]
     return InlineKeyboardMarkup(
