@@ -16,7 +16,11 @@ class SearchSession:
     provider: str
     query: str
     page: int = 1
+    image_message_id: int | None = None
+    tags_message_ids: list[int] = field(default_factory=list)
     current_post_id: str | None = None
+    current_page: int = 1
+    current_provider: str = ""
     results: list[BooruPost] = field(default_factory=list)
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 

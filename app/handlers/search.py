@@ -1,8 +1,10 @@
+import logging
+
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, InputMediaPhoto, Message
 
 from app.keyboards import post_keyboard
 from app.models import BooruPost
@@ -13,6 +15,7 @@ from app.ui.tags import format_full_tags_messages, format_tag_preview
 from app.ui.texts import ALL_PROVIDERS_FAILED, SEARCH_PROMPT, SESSION_EXPIRED
 
 router = Router()
+logger = logging.getLogger(__name__)
 limit_states: dict[int, LimitState] = {}
 post_cache: dict[tuple[int, str], BooruPost] = {}
 
@@ -43,20 +46,138 @@ def caption_for(post: BooruPost) -> str:
     )[:1024]
 
 
-async def send_post(target: Message, key: str, post: BooruPost, page: int) -> None:
+async def _delete_message(target: Message, message_id: int) -> None:
     try:
-        await target.answer_photo(
-            post.file_url,
-            caption=caption_for(post),
-            reply_markup=post_keyboard(key, page),
+        await target.bot.delete_message(chat_id=target.chat.id, message_id=message_id)
+    except Exception as exc:
+        logger.warning("failed to delete message %s: %s", message_id, exc)
+
+
+async def _edit_text_message(target: Message, message_id: int, text: str) -> bool:
+    try:
+        await target.bot.edit_message_text(chat_id=target.chat.id, message_id=message_id, text=text)
+        return True
+    except Exception as exc:
+        logger.warning("failed to edit text message %s: %s", message_id, exc)
+        return False
+
+
+async def _send_fallback_text(target: Message, key: str, post: BooruPost, page: int) -> Message:
+    return await target.answer(
+        f"Не удалось отправить изображение. Ссылка: {post.display_url}",
+        reply_markup=post_keyboard(key, page),
+    )
+
+
+async def _update_tags_messages(
+    target: Message, session: SearchSession, tag_messages: list[str]
+) -> None:
+    old_ids = list(session.tags_message_ids)
+    new_ids: list[int] = []
+    for index, text in enumerate(tag_messages):
+        if index < len(old_ids):
+            message_id = old_ids[index]
+            if await _edit_text_message(target, message_id, text):
+                new_ids.append(message_id)
+                continue
+            await _delete_message(target, message_id)
+        try:
+            sent = await target.answer(text)
+            new_ids.append(sent.message_id)
+        except Exception as exc:
+            logger.warning("failed to send tags message: %s", exc)
+    for message_id in old_ids[len(tag_messages) :]:
+        await _delete_message(target, message_id)
+    session.tags_message_ids = new_ids
+
+
+async def render_post(
+    target: Message,
+    key: str,
+    post: BooruPost,
+    page: int,
+    *,
+    update_existing: bool = False,
+    user_id: int | None = None,
+) -> None:
+    user_id = user_id or target.from_user.id
+    session = callback_sessions.get(key, user_id)
+    if not session:
+        return
+    session.current_post_id = post.post_id
+    session.current_page = page
+    session.current_provider = post.provider
+    session.page = page
+    session.provider = post.provider
+    tag_messages = format_full_tags_messages(" ".join(post.tags))
+
+    if not update_existing or session.image_message_id is None:
+        try:
+            sent = await target.answer_photo(
+                post.file_url,
+                caption=caption_for(post),
+                reply_markup=post_keyboard(key, page),
+            )
+        except Exception as exc:
+            logger.warning("failed to send photo: %s", exc)
+            try:
+                sent = await _send_fallback_text(target, key, post, page)
+            except Exception as fallback_exc:
+                logger.warning("failed to send fallback post: %s", fallback_exc)
+                return
+        session.image_message_id = sent.message_id
+        session.tags_message_ids = []
+        await _update_tags_messages(target, session, tag_messages)
+        callback_sessions.update(key, session)
+        return
+
+    markup = post_keyboard(key, page)
+    try:
+        await target.bot.edit_message_media(
+            chat_id=target.chat.id,
+            message_id=session.image_message_id,
+            media=InputMediaPhoto(media=post.file_url, caption=caption_for(post)),
+            reply_markup=markup,
         )
-    except Exception:
-        await target.answer(
-            f"Не удалось отправить изображение. Ссылка: {post.display_url}",
-            reply_markup=post_keyboard(key, page),
-        )
-    for tags_message in format_full_tags_messages(" ".join(post.tags)):
-        await target.answer(tags_message)
+    except Exception as exc:
+        logger.warning("failed to edit post media: %s", exc)
+        await _delete_message(target, session.image_message_id)
+        try:
+            sent = await target.answer_photo(
+                post.file_url, caption=caption_for(post), reply_markup=markup
+            )
+        except Exception as send_exc:
+            logger.warning("failed to send replacement photo: %s", send_exc)
+            fallback = f"Не удалось отправить изображение. Ссылка: {post.display_url}"
+            if not await _edit_text_message(target, session.image_message_id, fallback):
+                try:
+                    sent = await target.answer(fallback, reply_markup=markup)
+                except Exception as fallback_exc:
+                    logger.warning("failed to send replacement fallback: %s", fallback_exc)
+                else:
+                    session.image_message_id = sent.message_id
+            else:
+                # Keep the same message id if Telegram allowed editing an existing text fallback.
+                pass
+        else:
+            session.image_message_id = sent.message_id
+
+    await _update_tags_messages(target, session, tag_messages)
+    callback_sessions.update(key, session)
+
+
+async def _edit_existing_failure_message(target: Message, session: SearchSession) -> None:
+    if session.image_message_id is None:
+        return
+    if not await _edit_text_message(target, session.image_message_id, ALL_PROVIDERS_FAILED):
+        try:
+            await target.bot.edit_message_caption(
+                chat_id=target.chat.id,
+                message_id=session.image_message_id,
+                caption=ALL_PROVIDERS_FAILED,
+            )
+        except Exception as exc:
+            logger.warning("failed to edit failure message: %s", exc)
 
 
 async def run_search(
@@ -69,6 +190,8 @@ async def run_search(
     *,
     user_id: int | None = None,
     username: str | None = None,
+    session_key: str | None = None,
+    update_existing: bool = False,
 ) -> None:
     user_id = user_id or message.from_user.id
     username = username if username is not None else message.from_user.username
@@ -99,20 +222,41 @@ async def run_search(
     record_search(state)
     await db.add_history(user_id, provider.name if provider else provider_name, query)
     if not posts:
+        if update_existing and session_key:
+            session = callback_sessions.get(session_key, user_id)
+            if session:
+                await _edit_existing_failure_message(message, session)
+                return
         await message.answer(ALL_PROVIDERS_FAILED)
         return
     post = posts[0]
-    session = SearchSession(
-        user_id=user_id,
-        provider=post.provider,
-        query=query,
-        page=page,
-        current_post_id=post.post_id,
-        results=posts,
-    )
-    key = callback_sessions.create(session)
+    if session_key and update_existing:
+        session = callback_sessions.get(session_key, user_id)
+        if not session:
+            await message.answer(SESSION_EXPIRED)
+            return
+        session.provider = post.provider
+        session.query = query
+        session.page = page
+        session.current_post_id = post.post_id
+        session.current_page = page
+        session.current_provider = post.provider
+        session.results = posts
+        key = session_key
+    else:
+        session = SearchSession(
+            user_id=user_id,
+            provider=post.provider,
+            query=query,
+            page=page,
+            current_post_id=post.post_id,
+            current_page=page,
+            current_provider=post.provider,
+            results=posts,
+        )
+        key = callback_sessions.create(session)
     post_cache[(user_id, post.post_id)] = post
-    await send_post(message, key, post, page)
+    await render_post(message, key, post, page, update_existing=update_existing, user_id=user_id)
 
 
 @router.message(Command("search"))
@@ -185,5 +329,7 @@ async def page_or_repeat(callback: CallbackQuery, db, settings, providers_map) -
         page,
         user_id=callback.from_user.id,
         username=callback.from_user.username,
+        session_key=key,
+        update_existing=True,
     )
     await callback.answer()
