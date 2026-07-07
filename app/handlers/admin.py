@@ -20,7 +20,9 @@ async def admin(message: Message, settings) -> None:
         await message.answer(
             "Admin commands: /stats, /broadcast <text>, /provider_info <slug>, /reload_providers, "
             "/test_provider <slug>, /list_disabled, /list_broken, /list_auth_required, "
-            "/enable_provider <slug>, /disable_provider <slug>, /set_global_provider <provider>"
+            "/enable_provider <slug>, /disable_provider <slug>, /set_global_provider <provider>, "
+            "/tag_stats, /tag_stats_user <telegram_id>, /tag_users <tag>, "
+            "/user_searches <telegram_id>, /group_status"
         )
 
 
@@ -141,3 +143,55 @@ async def list_auth_required(message: Message, settings, provider_registry) -> N
         return
     slugs = [slug for slug, cfg in provider_registry.configs.items() if cfg.requires_auth]
     await message.answer("Auth-required providers:\n" + ("\n".join(slugs[:80]) or "None"))
+
+
+def _format_counts(rows, empty: str = "Нет данных.") -> str:
+    return "\n".join(f"{row['tag']}: {row['count']}" for row in rows) or empty
+
+
+@router.message(Command("tag_stats"))
+async def tag_stats(message: Message, db, settings) -> None:
+    if not await require_admin(message, settings):
+        return
+    await message.answer("🏷 Топ тегов\n" + _format_counts(await db.top_tags(30)))
+
+
+@router.message(Command("tag_stats_user"))
+async def tag_stats_user(message: Message, db, settings) -> None:
+    if not await require_admin(message, settings):
+        return
+    try:
+        telegram_id = int(_arg(message))
+    except ValueError:
+        await message.answer("Использование: /tag_stats_user <telegram_id>")
+        return
+    await message.answer(
+        f"👤 Теги пользователя {telegram_id}\n" + _format_counts(await db.top_tags(30, telegram_id))
+    )
+
+
+@router.message(Command("tag_users"))
+async def tag_users(message: Message, db, settings) -> None:
+    if not await require_admin(message, settings):
+        return
+    tag = _arg(message)
+    if not tag:
+        await message.answer("Использование: /tag_users <tag>")
+        return
+    rows = await db.users_by_tag(tag, 30)
+    text = "\n".join(f"{r['telegram_id']} @{r['username'] or '-'}: {r['count']}" for r in rows)
+    await message.answer(f"Пользователи тега {tag}\n" + (text or "Нет данных."))
+
+
+@router.message(Command("user_searches"))
+async def user_searches(message: Message, db, settings) -> None:
+    if not await require_admin(message, settings):
+        return
+    try:
+        telegram_id = int(_arg(message))
+    except ValueError:
+        await message.answer("Использование: /user_searches <telegram_id>")
+        return
+    rows = await db.user_searches(telegram_id, 20)
+    text = "\n".join(f"{r['created_at']} [{r['provider']}]: {r['query']}" for r in rows)
+    await message.answer(f"🔎 Поиски пользователя {telegram_id}\n" + (text or "Нет данных."))

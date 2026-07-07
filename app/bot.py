@@ -1,12 +1,14 @@
 import asyncio
 import logging
+from contextlib import suppress
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.config import get_settings
 from app.database import Database
-from app.handlers import admin, favorites, menu, providers, search, start
+from app.group_posting import start_scheduler
+from app.handlers import admin, favorites, group_posting, menu, providers, search, start
 from app.providers import build_registry
 from app.telegram_setup import setup_telegram_ui
 
@@ -49,11 +51,16 @@ async def main() -> None:
         search.router,
         favorites.router,
         admin.router,
+        group_posting.router,
     ):
         dp.include_router(router)
+    scheduler_task = start_scheduler(bot, db, providers_map)
     try:
         await dp.start_polling(bot)
     finally:
+        scheduler_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await scheduler_task
         await bot.session.close()
         await provider_registry.close()
 
