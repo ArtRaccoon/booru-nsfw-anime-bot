@@ -273,7 +273,7 @@ class Database:
         )
         await self.conn.commit()
 
-    async def group_post_seen(self, target_chat_id: int, provider: str, post_id: str) -> bool:
+    async def group_post_seen(self, target_chat_id: int | str, provider: str, post_id: str) -> bool:
         assert self.conn
         row = await (
             await self.conn.execute(
@@ -287,7 +287,7 @@ class Database:
         return row is not None
 
     async def add_group_post_history(
-        self, target_chat_id: int, provider: str, post_id: str, file_url: str, tags: str
+        self, target_chat_id: int | str, provider: str, post_id: str, file_url: str, tags: str
     ) -> None:
         assert self.conn
         await self.conn.execute(
@@ -308,7 +308,25 @@ class Database:
             )
         ).fetchall()
 
-    async def clear_group_history(self, target_chat_id: int) -> None:
+    async def group_history_stats(self, target_chat_id: int | str | None = None, limit: int = 10):
+        assert self.conn
+        where = "WHERE target_chat_id=?" if target_chat_id else ""
+        params = (target_chat_id, limit) if target_chat_id else (limit,)
+        total = await (
+            await self.conn.execute(
+                f"SELECT COUNT(*) c FROM group_post_history {where}",
+                (target_chat_id,) if target_chat_id else (),
+            )
+        ).fetchone()
+        rows = await (
+            await self.conn.execute(
+                f"SELECT * FROM group_post_history {where} ORDER BY id DESC LIMIT ?", params
+            )
+        ).fetchall()
+        last = rows[0]["posted_at"] if rows else None
+        return {"total": int(total["c"]), "rows": rows, "last": last}
+
+    async def clear_group_history(self, target_chat_id: int | str) -> None:
         assert self.conn
         await self.conn.execute(
             "DELETE FROM group_post_history WHERE target_chat_id=?", (target_chat_id,)

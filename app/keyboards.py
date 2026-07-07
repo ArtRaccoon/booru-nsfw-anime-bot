@@ -146,7 +146,8 @@ def admin_keyboard() -> InlineKeyboardMarkup:
         ("🏷 Статистика тегов", "admin_tag_stats"),
         ("👤 Теги пользователя", "admin_user_tags"),
         ("🔎 Поиски пользователя", "admin_user_searches"),
-        ("🛰 Групповой постинг", "admin_group_posting"),
+        ("📢 Постинг в канал", "admin_channel_posting"),
+        ("🛰 Групповой постинг", "admin_channel_posting"),
         ("🧪 Тест источника", "admin_test_provider"),
         ("🔄 Перезагрузить источники", "reload_providers"),
         ("✅ Включить источник", "admin_enable_provider"),
@@ -163,20 +164,56 @@ def admin_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def group_posting_keyboard() -> InlineKeyboardMarkup:
-    labels = [
-        ("🔗 Привязать группу", "group_bind_help"),
-        ("▶️ Включить", "group_enable_help"),
-        ("⏸ Выключить", "group_disable_help"),
-        ("🎚 Режим SFW/NSFW/MIXED", "group_mode_help"),
-        ("🏷 Теги", "group_tags_help"),
-        ("⏱ Интервал", "group_interval_help"),
-        ("🚀 Пост сейчас", "group_post_now_help"),
-        ("📜 История", "group_history_help"),
-        ("🏠 Меню", "main_menu"),
+def channel_posting_keyboard() -> InlineKeyboardMarkup:
+    rows = [
+        [("▶️ Включить", "channel_enable"), ("⏸ Выключить", "channel_disable")],
+        [("🚀 Пост сейчас", "channel_post_now"), ("🧪 Тест канала", "channel_test")],
+        [("🎚 Режим", "channel_mode"), ("🏷 Теги", "channel_tags")],
+        [("🌐 Источник", "channel_provider:0"), ("⏱ Интервал", "channel_interval")],
+        [("📜 История", "channel_history"), ("🧹 Сброс истории", "channel_reset_history")],
+        [("🔗 Привязать", "channel_bind"), ("🏠 Меню", "admin_menu")],
     ]
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text=text, callback_data=data)] for text, data in labels
+            [InlineKeyboardButton(text=text, callback_data=data) for text, data in row]
+            for row in rows
         ]
     )
+
+
+def channel_mode_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="SFW", callback_data="channel_set_mode:sfw"),
+                InlineKeyboardButton(text="NSFW", callback_data="channel_set_mode:nsfw"),
+                InlineKeyboardButton(text="MIXED", callback_data="channel_set_mode:mixed"),
+            ],
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_channel_posting")],
+        ]
+    )
+
+
+def channel_provider_keyboard(
+    slugs: list[str], page: int = 0, per_page: int = 8
+) -> InlineKeyboardMarkup:
+    values = ["auto", *sorted(slugs)]
+    page = max(0, page)
+    chunk = values[page * per_page : (page + 1) * per_page]
+    rows = [
+        [InlineKeyboardButton(text=slug, callback_data=f"channel_set_provider:{slug}")]
+        for slug in chunk
+    ]
+    nav = []
+    if page > 0:
+        nav.append(InlineKeyboardButton(text="⬅️", callback_data=f"channel_provider:{page - 1}"))
+    if (page + 1) * per_page < len(values):
+        nav.append(InlineKeyboardButton(text="➡️", callback_data=f"channel_provider:{page + 1}"))
+    if nav:
+        rows.append(nav)
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_channel_posting")])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def group_posting_keyboard() -> InlineKeyboardMarkup:
+    return channel_posting_keyboard()
