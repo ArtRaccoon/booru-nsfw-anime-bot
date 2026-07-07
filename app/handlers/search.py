@@ -213,11 +213,21 @@ async def run_search(
         await message.answer(reason)
         return
     provider_name = await db.get_provider(user_id, settings.default_provider)
+    mode = await db.get_user_provider_mode(user_id)
+    enabled = list(providers_map.items())
     ordered = {}
-    if provider_name in providers_map:
-        ordered[provider_name] = providers_map[provider_name]
-    for slug, candidate in providers_map.items():
-        ordered.setdefault(slug, candidate)
+    if mode == "selected":
+        if provider_name in providers_map:
+            ordered[provider_name] = providers_map[provider_name]
+    elif mode == "rotation" and enabled:
+        idx = await db.next_user_provider_cursor(user_id, len(enabled))
+        rotated = enabled[idx:] + enabled[:idx]
+        ordered = dict(rotated)
+    else:  # fallback
+        if provider_name in providers_map:
+            ordered[provider_name] = providers_map[provider_name]
+        for slug, candidate in providers_map.items():
+            ordered.setdefault(slug, candidate)
     provider, posts = await fallback_search(ordered, query, settings.result_limit, page)
     record_search(state)
     selected_provider = provider.name if provider else provider_name

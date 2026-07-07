@@ -69,12 +69,12 @@ async def admin_stats(callback: CallbackQuery, db, settings) -> None:
 
 @router.callback_query(lambda c: c.data == "reload_providers")
 async def reload_providers_button(
-    callback: CallbackQuery, settings, provider_registry, providers_map
+    callback: CallbackQuery, settings, provider_registry, providers_map, db
 ) -> None:
     if not is_admin(callback.from_user.id, settings.admin_ids):
         await callback.answer("Только для админа.", show_alert=True)
         return
-    await provider_registry.reload()
+    await provider_registry.reload(db)
     providers_map.clear()
     providers_map.update(provider_registry.providers)
     await callback.answer("Источники перезагружены.", show_alert=True)

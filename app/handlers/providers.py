@@ -1,4 +1,4 @@
-from aiogram import Router
+from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
@@ -87,3 +87,27 @@ async def provider_callback(callback: CallbackQuery, db, providers_map) -> None:
     await db.set_provider(callback.from_user.id, provider)
     await callback.message.edit_text(f"Источник выбран: {provider}")
     await callback.answer()
+
+
+@router.message(Command("source_mode"))
+async def source_mode_cmd(message: Message, db) -> None:
+    mode = message.text.split(maxsplit=1)[1].strip() if len(message.text.split()) > 1 else ""
+    if mode not in {"selected", "rotation", "fallback"}:
+        await message.answer("Использование: /source_mode selected|rotation|fallback")
+        return
+    await db.set_user_provider_mode(message.from_user.id, mode)
+    await message.answer(f"Режим источников: {mode}")
+
+
+@router.callback_query(F.data == "source_mode_menu")
+async def source_mode_menu(callback: CallbackQuery) -> None:
+    from app.keyboards import source_mode_keyboard
+
+    await callback.message.edit_text("🌐 Режим источников", reply_markup=source_mode_keyboard())
+
+
+@router.callback_query(F.data.startswith("source_mode:"))
+async def source_mode_pick(callback: CallbackQuery, db) -> None:
+    mode = callback.data.split(":", 1)[1]
+    await db.set_user_provider_mode(callback.from_user.id, mode)
+    await callback.message.edit_text(f"Режим источников: {mode}")

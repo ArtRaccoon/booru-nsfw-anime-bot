@@ -24,6 +24,8 @@ class Database:
               username TEXT,
               is_adult_confirmed INTEGER NOT NULL DEFAULT 0,
               selected_provider TEXT,
+              user_provider_mode TEXT DEFAULT 'selected',
+              provider_cursor INTEGER DEFAULT 0,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE TABLE IF NOT EXISTS favorites (
@@ -61,6 +63,8 @@ class Database:
               tags TEXT,
               interval_minutes INTEGER DEFAULT 180,
               last_posted_at TEXT,
+              provider_strategy TEXT DEFAULT 'round_robin',
+              provider_cursor INTEGER DEFAULT 0,
               created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
               updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
@@ -75,9 +79,44 @@ class Database:
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_group_post_unique
               ON group_post_history(target_chat_id, provider, post_id);
+            CREATE TABLE IF NOT EXISTS provider_candidates (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
+              slug TEXT UNIQUE NOT NULL,
+              name TEXT NOT NULL,
+              base_url TEXT NOT NULL,
+              api_url TEXT,
+              engine TEXT,
+              category TEXT,
+              sfw_status TEXT,
+              anime_relevant INTEGER DEFAULT 0,
+              requires_auth INTEGER DEFAULT 0,
+              broken INTEGER DEFAULT 0,
+              enabled INTEGER DEFAULT 0,
+              availability_status TEXT DEFAULT 'unchecked',
+              last_checked_at TEXT,
+              http_status INTEGER,
+              error TEXT,
+              source TEXT,
+              notes TEXT,
+              created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+              updated_at TEXT DEFAULT CURRENT_TIMESTAMP
+            );
             INSERT OR IGNORE INTO group_posting_settings(id) VALUES(1);
             """
         )
+        for table, coldef in [
+            ("users", "user_provider_mode TEXT DEFAULT 'selected'"),
+            ("users", "provider_cursor INTEGER DEFAULT 0"),
+            ("group_posting_settings", "provider_strategy TEXT DEFAULT 'round_robin'"),
+            ("group_posting_settings", "provider_cursor INTEGER DEFAULT 0"),
+        ]:
+            col = coldef.split()[0]
+            cols = [
+                r["name"]
+                for r in await (await self.conn.execute(f"PRAGMA table_info({table})")).fetchall()
+            ]
+            if col not in cols:
+                await self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {coldef}")
         await self.conn.commit()
 
     async def upsert_user(self, telegram_id: int, username: str | None) -> None:
@@ -120,6 +159,187 @@ class Database:
             )
         ).fetchone()
         return row["selected_provider"] if row and row["selected_provider"] else default
+
+    async def set_user_provider_mode(self, telegram_id: int, mode: str) -> None:
+        assert self.conn
+        if mode not in {"selected", "rotation", "fallback"}:
+            raise ValueError("invalid provider mode")
+        await self.conn.execute(
+            "UPDATE users SET user_provider_mode=? WHERE telegram_id=?", (mode, telegram_id)
+        )
+        await self.conn.commit()
+
+    async def get_user_provider_mode(self, telegram_id: int) -> str:
+        assert self.conn
+        row = await (
+            await self.conn.execute(
+                "SELECT user_provider_mode FROM users WHERE telegram_id=?", (telegram_id,)
+            )
+        ).fetchone()
+        return row["user_provider_mode"] if row and row["user_provider_mode"] else "selected"
+
+    async def next_user_provider_cursor(self, telegram_id: int, count: int) -> int:
+        assert self.conn
+        row = await (
+            await self.conn.execute(
+                "SELECT provider_cursor FROM users WHERE telegram_id=?", (telegram_id,)
+            )
+        ).fetchone()
+        cur = int(row["provider_cursor"] or 0) if row else 0
+        await self.conn.execute(
+            "UPDATE users SET provider_cursor=? WHERE telegram_id=?",
+            ((cur + 1) % max(1, count), telegram_id),
+        )
+        await self.conn.commit()
+        return cur % max(1, count)
+
+    async def next_channel_provider_cursor(self, count: int) -> int:
+        assert self.conn
+        row = await self.get_group_posting_settings()
+        cur = int(row["provider_cursor"] or 0) if row else 0
+        await self.update_group_posting_settings(provider_cursor=(cur + 1) % max(1, count))
+        return cur % max(1, count)
+
+    async def upsert_provider_candidates(self, entries) -> dict[str, int]:
+        assert self.conn
+        imported = updated = 0
+        for e in entries:
+            exists = await (
+                await self.conn.execute("SELECT 1 FROM provider_candidates WHERE slug=?", (e.slug,))
+            ).fetchone()
+            await self.conn.execute(
+                """
+                INSERT INTO provider_candidates(
+                    slug, name, base_url, api_url, engine, category, sfw_status,
+                    anime_relevant, requires_auth, broken, source, notes
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT(slug) DO UPDATE SET
+                    name=excluded.name,
+                    base_url=excluded.base_url,
+                    api_url=excluded.api_url,
+                    engine=excluded.engine,
+                    category=excluded.category,
+                    sfw_status=excluded.sfw_status,
+                    anime_relevant=excluded.anime_relevant,
+                    requires_auth=excluded.requires_auth,
+                    broken=excluded.broken,
+                    source=excluded.source,
+                    notes=excluded.notes,
+                    updated_at=CURRENT_TIMESTAMP
+            """,
+                (
+                    e.slug,
+                    e.name,
+                    e.base_url,
+                    e.api_url,
+                    e.engine,
+                    e.category,
+                    e.sfw_status,
+                    int(e.anime_relevant),
+                    int(e.requires_auth),
+                    int(e.broken),
+                    e.source,
+                    e.notes,
+                ),
+            )
+            updated += 1 if exists else 0
+            imported += 0 if exists else 1
+        await self.conn.commit()
+        return {
+            "imported": imported,
+            "updated": updated,
+            "total": await self.count_provider_candidates(),
+        }
+
+    async def count_provider_candidates(self) -> int:
+        assert self.conn
+        return int(
+            (
+                await (
+                    await self.conn.execute("SELECT COUNT(*) c FROM provider_candidates")
+                ).fetchone()
+            )["c"]
+        )
+
+    async def provider_catalog_counts(self):
+        assert self.conn
+        rows = await (
+            await self.conn.execute(
+                "SELECT availability_status status, COUNT(*) c FROM provider_candidates GROUP BY availability_status"  # noqa: E501
+            )
+        ).fetchall()
+        data = {r["status"]: int(r["c"]) for r in rows}
+        data["total"] = await self.count_provider_candidates()
+        data["enabled"] = int(
+            (
+                await (
+                    await self.conn.execute(
+                        "SELECT COUNT(*) c FROM provider_candidates WHERE enabled=1"
+                    )
+                ).fetchone()
+            )["c"]
+        )
+        return data
+
+    async def list_provider_candidates(
+        self, status: str | None = None, limit: int = 20, offset: int = 0
+    ):
+        assert self.conn
+        if status:
+            return await (
+                await self.conn.execute(
+                    "SELECT * FROM provider_candidates WHERE availability_status=? ORDER BY slug LIMIT ? OFFSET ?",  # noqa: E501
+                    (status, limit, offset),
+                )
+            ).fetchall()
+        return await (
+            await self.conn.execute(
+                "SELECT * FROM provider_candidates ORDER BY slug LIMIT ? OFFSET ?", (limit, offset)
+            )
+        ).fetchall()
+
+    async def get_provider_candidate(self, slug: str):
+        assert self.conn
+        return await (
+            await self.conn.execute("SELECT * FROM provider_candidates WHERE slug=?", (slug,))
+        ).fetchone()
+
+    async def update_candidate_probe(self, slug: str, result) -> None:
+        assert self.conn
+        await self.conn.execute(
+            """
+            UPDATE provider_candidates SET
+                availability_status=?,
+                http_status=?,
+                error=?,
+                engine=COALESCE(?, engine),
+                last_checked_at=CURRENT_TIMESTAMP,
+                updated_at=CURRENT_TIMESTAMP
+            WHERE slug=?
+            """,
+            (result.availability_status, result.http_status, result.error, result.engine, slug),
+        )
+        await self.conn.commit()
+
+    async def set_candidate_enabled(self, slug: str, enabled: bool) -> bool:
+        assert self.conn
+        row = await self.get_provider_candidate(slug)
+        if not row:
+            return False
+        await self.conn.execute(
+            "UPDATE provider_candidates SET enabled=?, updated_at=CURRENT_TIMESTAMP WHERE slug=?",
+            (int(enabled), slug),
+        )
+        await self.conn.commit()
+        return True
+
+    async def enabled_available_candidates(self):
+        assert self.conn
+        return await (
+            await self.conn.execute(
+                "SELECT * FROM provider_candidates WHERE enabled=1 AND availability_status='available' ORDER BY slug"  # noqa: E501
+            )
+        ).fetchall()
 
     async def add_favorite(
         self, telegram_id: int, provider: str, post_id: str, file_url: str, tags: list[str]

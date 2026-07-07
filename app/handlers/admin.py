@@ -43,9 +43,11 @@ async def broadcast(message: Message, settings) -> None:
 
 
 @router.message(Command("reload_providers"))
-async def reload_providers(message: Message, settings, provider_registry, providers_map) -> None:
+async def reload_providers(
+    message: Message, settings, provider_registry, providers_map, db
+) -> None:
     if await require_admin(message, settings):
-        await provider_registry.reload()
+        await provider_registry.reload(db)
         providers_map.clear()
         providers_map.update(provider_registry.providers)
         await message.answer(

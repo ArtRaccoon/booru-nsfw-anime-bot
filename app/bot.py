@@ -8,7 +8,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 from app.channel_posting import start_scheduler
 from app.config import get_settings
 from app.database import Database
-from app.handlers import admin, favorites, group_posting, menu, providers, search, start
+from app.handlers import admin, catalog, favorites, group_posting, menu, providers, search, start
 from app.providers import build_registry
 from app.telegram_setup import setup_telegram_ui
 
@@ -28,6 +28,7 @@ async def main() -> None:
     db = Database(settings.database_path)
     await db.connect()
     provider_registry = build_registry(settings)
+    await provider_registry.add_enabled_candidates(db)
     providers_map = provider_registry.providers
     selected_default = provider_registry.select_default(settings.default_provider)
     if selected_default != settings.default_provider:
@@ -51,6 +52,7 @@ async def main() -> None:
         search.router,
         favorites.router,
         admin.router,
+        catalog.router,
         group_posting.router,
     ):
         dp.include_router(router)
