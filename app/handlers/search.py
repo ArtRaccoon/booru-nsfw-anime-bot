@@ -8,6 +8,7 @@ from aiogram.types import CallbackQuery, InputMediaPhoto, Message
 
 from app.keyboards import post_keyboard
 from app.models import BooruPost
+from app.providers.download import as_buffered_input_file, fetch_image_bytes
 from app.providers.registry import fallback_search
 from app.safety import LimitState, can_search, record_search, validate_tags
 from app.ui.sessions import SearchSession, callback_sessions, parse_callback
@@ -111,10 +112,21 @@ async def render_post(
     session.provider = post.provider
     tag_messages = format_full_tags_messages(" ".join(post.tags))
 
+    try:
+        image_bytes = await fetch_image_bytes(post.file_url, referer=post.source_url)
+        image_file = as_buffered_input_file(
+            image_bytes, filename=f"{post.provider}_{post.post_id}.jpg"
+        )
+    except Exception as exc:
+        logger.warning("failed to download image before Telegram upload: %s", exc)
+        image_file = None
+
     if not update_existing or session.image_message_id is None:
         try:
+            if image_file is None:
+                raise RuntimeError("image download failed")
             sent = await target.answer_photo(
-                post.file_url,
+                image_file,
                 caption=caption_for(post),
                 reply_markup=post_keyboard(key, page),
             )
@@ -136,15 +148,17 @@ async def render_post(
         await target.bot.edit_message_media(
             chat_id=target.chat.id,
             message_id=session.image_message_id,
-            media=InputMediaPhoto(media=post.file_url, caption=caption_for(post)),
+            media=InputMediaPhoto(media=image_file or post.file_url, caption=caption_for(post)),
             reply_markup=markup,
         )
     except Exception as exc:
         logger.warning("failed to edit post media: %s", exc)
         await _delete_message(target, session.image_message_id)
         try:
+            if image_file is None:
+                raise RuntimeError("image download failed")
             sent = await target.answer_photo(
-                post.file_url, caption=caption_for(post), reply_markup=markup
+                image_file, caption=caption_for(post), reply_markup=markup
             )
         except Exception as send_exc:
             logger.warning("failed to send replacement photo: %s", send_exc)
@@ -216,10 +230,10 @@ async def run_search(
     mode = await db.get_user_provider_mode(user_id)
     enabled = list(providers_map.items())
     ordered = {}
-    if mode == "selected":
+    if mode in {"selected", "only_selected"}:
         if provider_name in providers_map:
             ordered[provider_name] = providers_map[provider_name]
-    elif mode == "rotation" and enabled:
+    elif mode in {"rotation", "round_robin", "random"} and enabled:
         idx = await db.next_user_provider_cursor(user_id, len(enabled))
         rotated = enabled[idx:] + enabled[:idx]
         ordered = dict(rotated)

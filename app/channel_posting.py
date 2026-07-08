@@ -11,6 +11,7 @@ from aiogram.enums import ParseMode
 from aiogram.types import Message
 
 from app.models import BooruPost
+from app.providers.download import as_buffered_input_file, content_hashes, fetch_image_bytes
 from app.providers.registry import fallback_search
 
 logger = logging.getLogger(__name__)
@@ -111,14 +112,14 @@ async def find_unique_post(db, providers_map, settings: dict[str, Any]) -> Booru
         and configured_provider in providers_map
     ):
         providers = {configured_provider: providers_map[configured_provider]}
-    elif strategy == "fallback":
+    elif strategy in {"fallback", "auto"}:
         ordered = {}
         if configured_provider != "auto" and configured_provider in providers_map:
             ordered[configured_provider] = providers_map[configured_provider]
         for slug, provider in providers_map.items():
             ordered.setdefault(slug, provider)
         providers = ordered
-    elif strategy == "round_robin" and providers_map:
+    elif strategy in {"round_robin", "random"} and providers_map:
         items = list(providers_map.items())
         idx = await db.next_channel_provider_cursor(len(items))
         rotated = items[idx:] + items[:idx]
@@ -157,15 +158,30 @@ async def publish_channel_post(
         return False, "Не удалось найти уникальный пост после 10 попыток."
     target = settings["target_chat_id"]
     try:
+        image_bytes = await fetch_image_bytes(post.file_url, referer=post.source_url)
+        hashes = content_hashes(image_bytes)
+        if await db.group_post_seen(
+            target, post.provider, post.post_id, sha256=hashes["sha256"], md5=hashes["md5"]
+        ):
+            return False, "Повтор обнаружен по hash."
         await bot.send_photo(
-            target, post.file_url, caption=format_caption(post), parse_mode=ParseMode.HTML
+            target,
+            as_buffered_input_file(image_bytes, filename=f"{post.provider}_{post.post_id}.jpg"),
+            caption=format_caption(post),
+            parse_mode=ParseMode.HTML,
         )
         await _send_tag_blocks(bot, target, post.tags)
     except Exception as exc:
         logger.exception("%s: %s", POST_ERROR, exc)
         return False, f"Ошибка: {type(exc).__name__}\nОписание: {exc}"
     await db.add_group_post_history(
-        target, post.provider, post.post_id, post.file_url, " ".join(post.tags)
+        target,
+        post.provider,
+        post.post_id,
+        post.file_url,
+        " ".join(post.tags),
+        sha256=hashes["sha256"],
+        md5=hashes["md5"],
     )
     await db.touch_group_posted_at(utcnow_iso())
     return True, None

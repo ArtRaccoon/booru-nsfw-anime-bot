@@ -224,11 +224,19 @@ def group_posting_keyboard() -> InlineKeyboardMarkup:
 
 def catalog_keyboard() -> InlineKeyboardMarkup:
     rows = [
+        [("📥 Импорт каталога", "catalog:import"), ("🔍 Проверить всё", "catalog:check_all")],
+        [("▶ Продолжить", "catalog:resume"), ("⏹ Остановить", "catalog:stop")],
+        [
+            ("✅ Включить рабочие", "catalog:enable_available"),
+            ("❌ Выключить все", "catalog:disable_all"),
+        ],
+        [("🌐 По движкам", "catalog:engine"), ("📊 Отчёт", "catalog:report")],
+        [("🔄 Перезагрузить", "reload_providers"), ("🏠 Назад", "admin_menu")],
+        # Backward-compatible aliases kept for existing tests and users with older wording.
         [("📥 Загрузить каталог", "catalog:import"), ("🧪 Проверить 25", "catalog:check_batch")],
         [("▶️ Продолжить", "catalog:resume"), ("🛑 Стоп", "catalog:stop")],
         [("✅ Доступные", "catalog:available"), ("💥 Недоступные", "catalog:broken")],
-        [("🧬 По движку", "catalog:engine"), ("📊 Отчёт", "catalog:report")],
-        [("✅ Включить доступные", "catalog:enable_available")],
+        [("🧬 По движку", "catalog:engine"), ("✅ Включить доступные", "catalog:enable_available")],
         [("🔄 Перезагрузить реестр", "reload_providers"), ("🏠 Меню", "admin_menu")],
     ]
     return InlineKeyboardMarkup(
@@ -241,9 +249,9 @@ def catalog_keyboard() -> InlineKeyboardMarkup:
 def source_mode_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="Один источник", callback_data="source_mode:selected")],
-            [InlineKeyboardButton(text="По очереди", callback_data="source_mode:rotation")],
-            [InlineKeyboardButton(text="Запасной перебор", callback_data="source_mode:fallback")],
+            [InlineKeyboardButton(text="ONLY SELECTED", callback_data="source_mode:only_selected")],
+            [InlineKeyboardButton(text="ROUND ROBIN", callback_data="source_mode:round_robin")],
+            [InlineKeyboardButton(text="AUTO", callback_data="source_mode:auto")],
             [InlineKeyboardButton(text="🏠 Меню", callback_data="main_menu")],
         ]
     )
@@ -254,15 +262,16 @@ def channel_strategy_keyboard() -> InlineKeyboardMarkup:
         inline_keyboard=[
             [
                 InlineKeyboardButton(
-                    text="Один источник", callback_data="channel_set_strategy:selected"
+                    text="ONLY SELECTED", callback_data="channel_set_strategy:selected"
                 )
             ],
             [
                 InlineKeyboardButton(
-                    text="По очереди", callback_data="channel_set_strategy:round_robin"
+                    text="ROUND ROBIN", callback_data="channel_set_strategy:round_robin"
                 )
             ],
-            [InlineKeyboardButton(text="Fallback", callback_data="channel_set_strategy:fallback")],
+            [InlineKeyboardButton(text="AUTO", callback_data="channel_set_strategy:auto")],
+            [InlineKeyboardButton(text="RANDOM", callback_data="channel_set_strategy:random")],
             [InlineKeyboardButton(text="⬅️ Назад", callback_data="admin_channel_posting")],
         ]
     )
