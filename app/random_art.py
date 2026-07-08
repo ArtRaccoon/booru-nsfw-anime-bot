@@ -34,7 +34,7 @@ class Artwork:
 class UserGallery:
     history: list[Artwork] = field(default_factory=list)
     current_index: int = -1
-    favorites: set[tuple[str, str]] = field(default_factory=set)
+    favorites: list[tuple[str, str]] = field(default_factory=list)
 
     @property
     def current(self) -> Artwork | None:
@@ -184,8 +184,25 @@ class RandomArtService:
         if artwork.unique_key in gallery.favorites:
             LOGGER.info("favorite duplicate (%s:%s, %s)", *artwork.unique_key, user_id)
             return False
-        gallery.favorites.add(artwork.unique_key)
+        gallery.favorites.append(artwork.unique_key)
         LOGGER.info("favorite added (%s:%s, %s)", *artwork.unique_key, user_id)
+        return True
+
+    def favorite_artworks(self, user_id: int) -> list[Artwork]:
+        gallery = self.gallery(user_id)
+        by_key = {art.unique_key: art for art in gallery.history}
+        return [by_key[key] for key in gallery.favorites if key in by_key]
+
+    def delete_favorite(self, user_id: int, index: int) -> bool:
+        gallery = self.gallery(user_id)
+        favorites = self.favorite_artworks(user_id)
+        if not 0 <= index < len(favorites):
+            return False
+        key = favorites[index].unique_key
+        gallery.favorites = [
+            favorite_key for favorite_key in gallery.favorites if favorite_key != key
+        ]
+        LOGGER.info("favorite removed (%s:%s, %s)", *key, user_id)
         return True
 
 

@@ -22,12 +22,10 @@ START_TEXT = (
 MAIN_MENU_TEXT = "🦝 Енот Ищейка уже принюхался.\n\nВыбери, куда пойдём дальше:"
 
 MENU_RANDOM_TEXT = "🎲 Рандомный арт добавим следующим этапом."
-MENU_FAVORITES_TEXT = "⭐ Избранное пока пустует в коробочке."
 MENU_SEARCH_TEXT = "🔎 Поиск по тегам скоро появится."
 MENU_PREMIUM_TEXT = "💎 Премиум-раздел пока закрыт на маленький енотовый замочек."
 
 MENU_STUBS = {
-    "menu:favorites": MENU_FAVORITES_TEXT,
     "menu:search": MENU_SEARCH_TEXT,
     "menu:premium": MENU_PREMIUM_TEXT,
 }
