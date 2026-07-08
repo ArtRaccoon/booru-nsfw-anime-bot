@@ -27,7 +27,6 @@ MENU_SEARCH_TEXT = "🔎 Поиск по тегам скоро появится.
 MENU_PREMIUM_TEXT = "💎 Премиум-раздел пока закрыт на маленький енотовый замочек."
 
 MENU_STUBS = {
-    "menu:random": MENU_RANDOM_TEXT,
     "menu:favorites": MENU_FAVORITES_TEXT,
     "menu:search": MENU_SEARCH_TEXT,
     "menu:premium": MENU_PREMIUM_TEXT,

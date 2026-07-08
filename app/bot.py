@@ -8,6 +8,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.config import Settings, get_settings
+from app.handlers.random_art import router as random_art_router
 from app.handlers.start import router as start_router
 
 
@@ -31,6 +32,7 @@ def create_bot(settings: Settings) -> Bot:
 def build_dispatcher() -> Dispatcher:
     dp = Dispatcher()
     dp.include_router(start_router)
+    dp.include_router(random_art_router)
     return dp
 
 
