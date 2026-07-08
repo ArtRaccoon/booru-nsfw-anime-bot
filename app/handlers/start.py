@@ -6,7 +6,7 @@ from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, Message
 
-from app.keyboards import search_keyboard
+from app.keyboards import main_menu_keyboard, search_keyboard
 
 router = Router()
 
@@ -19,7 +19,19 @@ START_TEXT = (
     "⬇️ Нажми кнопку ниже, чтобы начать поиск."
 )
 
-SEARCH_UNDER_CONSTRUCTION_TEXT = "🚧 Поиск пока находится в разработке."
+MAIN_MENU_TEXT = "🦝 Енот Ищейка уже принюхался.\n\nВыбери, куда пойдём дальше:"
+
+MENU_RANDOM_TEXT = "🎲 Рандомный арт добавим следующим этапом."
+MENU_FAVORITES_TEXT = "⭐ Избранное пока пустует в коробочке."
+MENU_SEARCH_TEXT = "🔎 Поиск по тегам скоро появится."
+MENU_PREMIUM_TEXT = "💎 Премиум-раздел пока закрыт на маленький енотовый замочек."
+
+MENU_STUBS = {
+    "menu:random": MENU_RANDOM_TEXT,
+    "menu:favorites": MENU_FAVORITES_TEXT,
+    "menu:search": MENU_SEARCH_TEXT,
+    "menu:premium": MENU_PREMIUM_TEXT,
+}
 
 
 def _user_id(event: Message | CallbackQuery) -> int | None:
@@ -35,4 +47,13 @@ async def start(message: Message) -> None:
 @router.callback_query(F.data == "search:start")
 async def search_start(call: CallbackQuery) -> None:
     logging.info("search:start clicked (%s)", _user_id(call))
-    await call.answer(SEARCH_UNDER_CONSTRUCTION_TEXT)
+    if call.message:
+        await call.message.edit_text(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+    logging.info("main menu opened (%s)", _user_id(call))
+    await call.answer()
+
+
+@router.callback_query(F.data.in_(MENU_STUBS))
+async def main_menu_stub(call: CallbackQuery) -> None:
+    logging.info("%s clicked (%s)", call.data, _user_id(call))
+    await call.answer(MENU_STUBS[call.data])
