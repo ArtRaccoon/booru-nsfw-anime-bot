@@ -476,7 +476,7 @@ def test_prev_without_history_gives_readable_message(tmp_path):
 
         await post_prev(call, ctx)
 
-        assert call.answer_args == (("Предыдущих постов нет",), {"show_alert": True})
+        assert call.answer_args == (("Это первый пост",), {"show_alert": True})
 
     asyncio.run(run())
 
@@ -529,3 +529,172 @@ def test_home_opens_main_menu():
     assert text == "Главное меню"
     assert "random" in callback_data(markup)
     assert call.answered is True
+
+
+def test_next_does_not_repeat_current_post(tmp_path):
+    from app.handlers.search import fetch_next_post
+
+    class DuplicateThenUniqueProviders(FakePostProviders):
+        async def search(self, tags="", provider_name=None, page=1, limit=20, auto=True):
+            self.search_calls.append((tags, provider_name, page, limit, auto))
+            post_id = "1" if len(self.search_calls) == 1 else "2"
+            return provider_name or "gelbooru", [
+                Post(
+                    provider_name or "gelbooru",
+                    post_id,
+                    f"https://example.com/{post_id}.jpg",
+                    tags=tags,
+                )
+            ]
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        ctx.providers = DuplicateThenUniqueProviders()
+        await seed_current_post(ctx, tags="cat", mode="search")
+
+        post = await fetch_next_post(ctx, 7)
+
+        assert post.post_id == "2"
+        rows = await db.fetchall(
+            "SELECT post_id FROM post_history WHERE user_id = ? ORDER BY history_index", (7,)
+        )
+        assert [row["post_id"] for row in rows] == ["1", "2"]
+
+    asyncio.run(run())
+
+
+def test_more_does_not_repeat_shown_posts(tmp_path):
+    from app.handlers.search import fetch_next_post
+
+    class SequenceProviders(FakePostProviders):
+        def __init__(self):
+            super().__init__()
+            self.ids = iter(["1", "2", "2", "3"])
+
+        async def random(self, tags="", provider_name=None, auto=True):
+            self.random_calls.append((tags, provider_name, auto))
+            post_id = next(self.ids)
+            return Post(provider_name or "gelbooru", post_id, f"https://example.com/{post_id}.jpg")
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        ctx.providers = SequenceProviders()
+        await seed_current_post(ctx, tags="", mode="random")
+
+        first = await fetch_next_post(ctx, 7, action="more")
+        second = await fetch_next_post(ctx, 7, action="more")
+
+        assert first.post_id == "2"
+        assert second.post_id == "3"
+        rows = await db.fetchall(
+            "SELECT post_id FROM post_history WHERE user_id = ? ORDER BY history_index", (7,)
+        )
+        assert [row["post_id"] for row in rows] == ["1", "2", "3"]
+
+    asyncio.run(run())
+
+
+def test_prev_returns_existing_previous_post(tmp_path):
+    from app.handlers.search import fetch_next_post, previous_post
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        await seed_current_post(ctx, tags="cat", mode="search")
+        await fetch_next_post(ctx, 7)
+
+        post = await previous_post(ctx, 7)
+
+        assert post.post_id == "1"
+
+    asyncio.run(run())
+
+
+def test_favorite_does_not_send_new_media(tmp_path):
+    from app.handlers.search import post_fav
+
+    class FakeUser:
+        id = 7
+
+    class FakeCall:
+        from_user = FakeUser()
+
+        def __init__(self):
+            self.answer_args = None
+
+        async def answer(self, *args, **kwargs):
+            self.answer_args = (args, kwargs)
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        await seed_current_post(ctx)
+        call = FakeCall()
+
+        await post_fav(call, ctx)
+
+        assert call.answer_args == (("Добавлено в избранное",), {})
+        assert ctx.providers.random_calls == []
+        assert ctx.providers.search_calls == []
+
+    asyncio.run(run())
+
+
+def test_duplicate_provider_post_id_is_not_appended(tmp_path):
+    from app.handlers.search import save_shown_post
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        post = Post("gelbooru", "1", "https://example.com/1.jpg")
+
+        assert await save_shown_post(ctx, 7, post, tags="cat", mode="search") is True
+        assert await save_shown_post(ctx, 7, post, tags="cat", mode="search") is False
+        rows = await db.fetchall("SELECT * FROM post_history WHERE user_id = ?", (7,))
+        assert len(rows) == 1
+
+    asyncio.run(run())
+
+
+def test_repeated_duplicate_fetch_returns_readable_callback(tmp_path):
+    from app.handlers.search import post_more
+
+    class DuplicateProviders(FakePostProviders):
+        async def random(self, tags="", provider_name=None, auto=True):
+            self.random_calls.append((tags, provider_name, auto))
+            return Post(provider_name or "gelbooru", "1", "https://example.com/1.jpg")
+
+    class FakeUser:
+        id = 7
+
+    class FakeCall:
+        from_user = FakeUser()
+
+        def __init__(self):
+            self.answer_args = None
+
+        async def answer(self, *args, **kwargs):
+            self.answer_args = (args, kwargs)
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        ctx.providers = DuplicateProviders()
+        await seed_current_post(ctx, tags="", mode="random")
+        call = FakeCall()
+
+        await post_more(call, ctx)
+
+        assert call.answer_args == (("Не нашла новый арт, попробуй ещё раз",), {"show_alert": True})
+        rows = await db.fetchall("SELECT * FROM post_history WHERE user_id = ?", (7,))
+        assert len(rows) == 1
+
+    asyncio.run(run())
