@@ -2,6 +2,10 @@ from __future__ import annotations
 
 import asyncio
 
+import pytest
+from aiogram.client.session.aiohttp import AiohttpSession
+
+from app.bot import _aiogram_proxy_url, create_bot
 from app.config import Settings
 from app.db import Database
 from app.keyboards import admin_menu, main_menu
@@ -111,3 +115,37 @@ def test_builtin_providers_exist():
         "rule34",
     }
     assert required <= set(BUILTIN_PROVIDER_CLASSES)
+
+
+@pytest.mark.parametrize("proxy_url", ["socks5://127.0.0.1:1080", "socks5h://127.0.0.1:1080"])
+def test_create_bot_uses_aiohttp_session_for_proxy(proxy_url):
+    settings = Settings(
+        BOT_TOKEN="123:abc",
+        ADMIN_IDS="",
+        PROXY_URL=proxy_url,
+        DEFAULT_PROVIDER="gelbooru",
+        DATABASE_PATH=":memory:",
+    )
+    bot = create_bot(settings)
+    try:
+        assert isinstance(bot.session, AiohttpSession)
+        assert bot.session._proxy == _aiogram_proxy_url(proxy_url)
+        assert bot.session._connector_init["host"] == "127.0.0.1"
+        assert bot.session._connector_init["port"] == 1080
+    finally:
+        asyncio.run(bot.session.close())
+
+
+def test_create_bot_uses_default_session_without_proxy():
+    settings = Settings(
+        BOT_TOKEN="123:abc",
+        ADMIN_IDS="",
+        DEFAULT_PROVIDER="gelbooru",
+        DATABASE_PATH=":memory:",
+    )
+    bot = create_bot(settings)
+    try:
+        assert isinstance(bot.session, AiohttpSession)
+        assert bot.session._proxy is None
+    finally:
+        asyncio.run(bot.session.close())
