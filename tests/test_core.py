@@ -24,7 +24,13 @@ from app.keyboards import (
     random_tags_keyboard,
     search_keyboard,
 )
-from app.random_art import Artwork, RandomArtService, StaticArtworkProvider, format_tags_text
+from app.random_art import (
+    DEFAULT_PROVIDERS,
+    Artwork,
+    RandomArtService,
+    StaticArtworkProvider,
+    format_tags_text,
+)
 
 
 def test_settings_load_defaults():
@@ -169,6 +175,7 @@ def _art(post_id, tags=("tag1", "tag2")):
         file_url=f"https://example.test/{post_id}.jpg",
         preview_url=f"https://example.test/{post_id}-preview.jpg",
         tags=tags,
+        rating="safe",
         metadata={"internal": True},
     )
 
@@ -227,6 +234,75 @@ def test_history_previous_at_first_answers(monkeypatch):
     asyncio.run(random_handler.random_previous(call))
 
     assert call.answers == [("Это первый просмотренный арт.", {})]
+
+
+def test_back_does_not_fetch(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1"), _art("2")])])
+    monkeypatch.setattr(random_handler, "random_art_service", service)
+    asyncio.run(service.next_artwork(42))
+    asyncio.run(service.next_artwork(42))
+    call = FakeCallback("random:previous")
+
+    asyncio.run(random_handler.random_previous(call))
+
+    assert service.gallery(42).current.post_id == "1"
+    assert service.providers[0]._queue == []
+    assert call.message.edits[-1][0].media == "https://example.test/1.jpg"
+
+
+def test_forward_uses_existing_history_before_fetching(monkeypatch):
+    provider = SequenceProvider([_art("1"), _art("2"), _art("3")])
+    service = RandomArtService([provider])
+    monkeypatch.setattr(random_handler, "random_art_service", service)
+    asyncio.run(service.next_artwork(42))
+    asyncio.run(service.next_artwork(42))
+    service.previous_artwork(42)
+    call = FakeCallback("random:next")
+
+    asyncio.run(random_handler.random_next(call))
+
+    assert service.gallery(42).current.post_id == "2"
+    assert [art.post_id for art in provider._queue] == ["3"]
+    assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
+
+
+def test_no_unique_art_keeps_current_artwork_visible_and_answers(monkeypatch):
+    first = _art("1")
+    service = RandomArtService([SequenceProvider([first])])
+    monkeypatch.setattr(random_handler, "random_art_service", service)
+    asyncio.run(service.next_artwork(42))
+    call = FakeCallback("random:next")
+
+    asyncio.run(random_handler.random_next(call))
+
+    assert service.gallery(42).current.post_id == "1"
+    assert call.message.edits == []
+    assert call.answers == [("Пока не нашла новый арт. Попробуйте ещё раз.", {})]
+
+
+def test_initial_empty_state_shows_main_menu_button(monkeypatch):
+    service = RandomArtService([SequenceProvider([])])
+    monkeypatch.setattr(random_handler, "random_art_service", service)
+    call = FakeCallback("menu:random")
+
+    asyncio.run(random_handler.random_open(call))
+
+    assert call.message.edits[0][0] == "Пока не удалось найти арт. Попробуйте позже."
+    buttons = _buttons(call.message.edits[0][1]["reply_markup"])
+    assert [(button.text, button.callback_data) for button in buttons] == [
+        ("🏠 Главное меню", "random:main")
+    ]
+
+
+def test_static_pool_has_at_least_30_sfw_items():
+    static_provider = DEFAULT_PROVIDERS[0]
+
+    assert len(static_provider._artworks) >= 30
+    assert all(art.rating == "safe" for art in static_provider._artworks)
+    assert all(
+        art.provider_id and art.post_id and art.file_url and art.preview_url and art.tags
+        for art in static_provider._artworks
+    )
 
 
 def test_favorite_duplicate_prevention(monkeypatch):

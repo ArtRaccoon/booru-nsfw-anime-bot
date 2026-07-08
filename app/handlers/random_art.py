@@ -5,10 +5,16 @@ import logging
 from aiogram import F, Router
 from aiogram.types import CallbackQuery, InputMediaPhoto
 
-from app.keyboards import main_menu_keyboard, random_art_keyboard, random_tags_keyboard
+from app.keyboards import (
+    main_menu_keyboard,
+    random_art_keyboard,
+    random_empty_keyboard,
+    random_tags_keyboard,
+)
 from app.random_art import (
     ALREADY_SAVED_TEXT,
     FIRST_ART_TEXT,
+    INITIAL_EMPTY_ART_TEXT,
     NO_UNIQUE_ART_TEXT,
     RANDOM_TITLE,
     RandomArtService,
@@ -53,7 +59,13 @@ async def random_open(call: CallbackQuery) -> None:
         return
     artwork = await random_art_service.next_artwork(user_id)
     if artwork is None:
-        await call.answer(NO_UNIQUE_ART_TEXT)
+        logging.info("initial random empty (%s)", user_id)
+        if call.message:
+            await call.message.edit_text(
+                INITIAL_EMPTY_ART_TEXT,
+                reply_markup=random_empty_keyboard(),
+            )
+        await call.answer()
         return
     if call.message:
         await call.message.edit_text(RANDOM_TITLE)
@@ -66,7 +78,9 @@ async def random_next(call: CallbackQuery) -> None:
     if user_id is None:
         await call.answer()
         return
-    artwork = await random_art_service.next_artwork(user_id)
+    artwork = random_art_service.next_from_history(user_id)
+    if artwork is None:
+        artwork = await random_art_service.next_artwork(user_id)
     if artwork is None:
         await call.answer(NO_UNIQUE_ART_TEXT)
         return
