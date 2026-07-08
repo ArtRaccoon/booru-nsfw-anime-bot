@@ -25,9 +25,9 @@ def main_menu(is_admin: bool = False) -> InlineKeyboardMarkup:
 def post_nav() -> InlineKeyboardMarkup:
     return kb(
         [
-            [("⬅️ Назад", "prev"), ("➡️ Далее", "next"), ("🔁 Еще", "more")],
-            [("⭐ В избранное", "fav_add"), ("🧭 Источник", "sources")],
-            [("🏠 Меню", "menu")],
+            [("⬅️ Назад", "post:prev"), ("➡️ Вперёд", "post:next"), ("🔁 Ещё", "post:more")],
+            [("⭐ В избранное", "post:fav")],
+            [("🏠 Домой", "menu:home")],
         ]
     )
 

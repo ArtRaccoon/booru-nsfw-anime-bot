@@ -384,3 +384,148 @@ def test_media_uses_proxy_url_from_settings(monkeypatch):
     import httpx
 
     asyncio.run(run())
+
+
+def callback_data(markup):
+    return [button.callback_data for row in markup.inline_keyboard for button in row]
+
+
+def test_post_nav_keyboard_contains_navigation_callbacks():
+    from app.keyboards import post_nav
+
+    assert callback_data(post_nav()) == [
+        "post:prev",
+        "post:next",
+        "post:more",
+        "post:fav",
+        "menu:home",
+    ]
+
+
+class FakePostProviders:
+    def __init__(self):
+        self.search_calls = []
+        self.random_calls = []
+
+    async def search(self, tags="", provider_name=None, page=1, limit=20, auto=True):
+        self.search_calls.append((tags, provider_name, page, limit, auto))
+        return provider_name or "gelbooru", [
+            Post(provider_name or "gelbooru", "next", "https://example.com/next.jpg", tags=tags)
+        ]
+
+    async def random(self, tags="", provider_name=None, auto=True):
+        self.random_calls.append((tags, provider_name, auto))
+        return Post(provider_name or "gelbooru", "random-next", "https://example.com/random.jpg")
+
+
+class FakePostContext:
+    def __init__(self, db):
+        self.db = db
+        self.providers = FakePostProviders()
+
+
+async def seed_current_post(ctx, user_id=7, tags="cat", mode="search"):
+    from app.handlers.search import save_shown_post
+
+    await save_shown_post(
+        ctx,
+        user_id,
+        Post("gelbooru", "1", "https://example.com/1.jpg", tags=tags),
+        tags=tags,
+        mode=mode,
+    )
+
+
+def test_favorite_duplicate_is_ignored(tmp_path):
+    from app.handlers.search import add_favorite
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        await seed_current_post(ctx)
+
+        assert await add_favorite(ctx, 7) is True
+        assert await add_favorite(ctx, 7) is False
+        rows = await db.fetchall("SELECT * FROM favorites WHERE user_id = ?", (7,))
+        assert len(rows) == 1
+
+    asyncio.run(run())
+
+
+def test_prev_without_history_gives_readable_message(tmp_path):
+    from app.handlers.search import post_prev
+
+    class FakeUserForPrev:
+        id = 7
+
+    class FakeCallForPrev:
+        from_user = FakeUserForPrev()
+
+        def __init__(self):
+            self.answer_args = None
+
+        async def answer(self, *args, **kwargs):
+            self.answer_args = (args, kwargs)
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        call = FakeCallForPrev()
+
+        await post_prev(call, ctx)
+
+        assert call.answer_args == (("Предыдущих постов нет",), {"show_alert": True})
+
+    asyncio.run(run())
+
+
+def test_next_more_uses_current_search_context(tmp_path):
+    from app.handlers.search import fetch_next_post
+
+    async def run():
+        db = Database(str(tmp_path / "bot.sqlite3"))
+        await db.migrate()
+        ctx = FakePostContext(db)
+        await seed_current_post(ctx, tags="cat rating:explicit", mode="search")
+
+        post = await fetch_next_post(ctx, 7)
+
+        assert post.post_id == "next"
+        assert ctx.providers.search_calls == [("cat rating:explicit", "gelbooru", 1, 30, False)]
+
+    asyncio.run(run())
+
+
+def test_home_opens_main_menu():
+    from app.handlers.search import post_home
+
+    class FakeMessageForHome:
+        def __init__(self):
+            self.edited = None
+
+        async def edit_text(self, text, reply_markup=None):
+            self.edited = (text, reply_markup)
+
+    class FakeUserForHome:
+        id = 7
+
+    class FakeCallForHome:
+        data = "menu:home"
+        from_user = FakeUserForHome()
+
+        def __init__(self):
+            self.message = FakeMessageForHome()
+            self.answered = False
+
+        async def answer(self, *args, **kwargs):
+            self.answered = True
+
+    call = FakeCallForHome()
+    asyncio.run(post_home(call))
+
+    text, markup = call.message.edited
+    assert text == "Главное меню"
+    assert "random" in callback_data(markup)
+    assert call.answered is True
