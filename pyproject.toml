@@ -5,18 +5,16 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "booru-nsfw-anime-bot"
 version = "0.1.0"
-description = "Telegram bot for NSFW anime booru search"
+description = "Minimal Telegram bot shell"
 requires-python = ">=3.12"
 dependencies = [
   "aiogram>=3.8,<4",
   "httpx[socks]>=0.27,<1",
-  "Pillow>=10,<12",
   "aiohttp-socks>=0.9,<1",
   "python-socks>=2.4,<3",
   "socksio>=1.0,<2",
   "pydantic-settings>=2.3,<3",
   "python-dotenv>=1,<2",
-  "aiosqlite>=0.20,<1",
 ]
 
 [project.optional-dependencies]
