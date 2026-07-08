@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from io import BytesIO
 
 import pytest
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -198,14 +199,19 @@ def test_main_callbacks_can_access_workflow_context():
 
 
 class FakeBot:
-    def __init__(self, *, direct_error: Exception | None = None):
+    def __init__(
+        self, *, direct_error: Exception | None = None, photo_error: Exception | None = None
+    ):
         self.calls = []
         self.direct_error = direct_error
+        self.photo_error = photo_error
 
     async def send_photo(self, chat_id, photo, **kwargs):
         self.calls.append(("photo", chat_id, photo, kwargs))
         if isinstance(photo, str) and self.direct_error:
             raise self.direct_error
+        if not isinstance(photo, str) and self.photo_error:
+            raise self.photo_error
         return {"method": "photo", "photo": photo}
 
     async def send_document(self, chat_id, document, **kwargs):
@@ -215,6 +221,17 @@ class FakeBot:
     async def send_message(self, chat_id, text):
         self.calls.append(("message", chat_id, text, {}))
         return {"method": "message", "text": text}
+
+
+def make_image_bytes(mode="RGB", size=(10, 10), image_format="PNG", color=None):
+    from PIL import Image
+
+    if color is None:
+        color = (255, 0, 0, 128) if mode == "RGBA" else (255, 0, 0)
+    image = Image.new(mode, size, color)
+    output = BytesIO()
+    image.save(output, format=image_format)
+    return output.getvalue()
 
 
 class FakeAsyncClient:
@@ -256,7 +273,7 @@ def test_media_sends_buffered_input_file_for_jpeg(monkeypatch):
     async def run():
         FakeAsyncClient.response = httpx.Response(
             200,
-            content=b"jpeg-bytes",
+            content=make_image_bytes(image_format="JPEG"),
             headers={"content-type": "image/jpeg"},
             request=httpx.Request("GET", "https://files.example.com/image"),
         )
@@ -271,7 +288,7 @@ def test_media_sends_buffered_input_file_for_jpeg(monkeypatch):
         assert method == "photo"
         assert chat_id == 123
         assert isinstance(photo, BufferedInputFile)
-        assert photo.data == b"jpeg-bytes"
+        assert photo.data.startswith(b"\xff\xd8")
         assert photo.filename == "image.jpg"
         assert kwargs["caption"] == media.post_caption(post)
 
@@ -342,7 +359,7 @@ def test_media_respects_photo_max_size(monkeypatch):
     async def run():
         FakeAsyncClient.response = httpx.Response(
             200,
-            content=b"x" * (media.PHOTO_MAX_BYTES + 1),
+            content=make_image_bytes(size=(5000, 3000), image_format="JPEG"),
             headers={"content-type": "image/jpeg"},
             request=httpx.Request("GET", "https://files.example.com/large.jpg"),
         )
@@ -352,8 +369,113 @@ def test_media_respects_photo_max_size(monkeypatch):
 
         result = await media.send_post(bot, 123, post, settings=Settings())
 
+        assert result["method"] == "photo"
+        method, _, photo, _ = bot.calls[0]
+        assert method == "photo"
+        assert photo.data.startswith(b"\xff\xd8")
+
+        from PIL import Image
+
+        with Image.open(BytesIO(photo.data)) as normalized:
+            assert max(normalized.size) <= media.PHOTO_MAX_SIDE
+            assert sum(normalized.size) <= media.PHOTO_MAX_DIMENSIONS_SUM
+
+    import httpx
+
+    asyncio.run(run())
+
+
+def test_media_converts_rgba_image_to_jpeg(monkeypatch):
+    from aiogram.types import BufferedInputFile
+    from PIL import Image
+
+    from app.services import media
+
+    async def run():
+        FakeAsyncClient.response = httpx.Response(
+            200,
+            content=make_image_bytes(mode="RGBA", image_format="PNG"),
+            headers={"content-type": "image/png"},
+            request=httpx.Request("GET", "https://files.example.com/transparent.png"),
+        )
+        monkeypatch.setattr(media.httpx, "AsyncClient", FakeAsyncClient)
+        bot = FakeBot()
+        post = Post("yandere", "1", "https://files.example.com/transparent.png")
+
+        result = await media.send_post(bot, 123, post, settings=Settings())
+
+        assert result["method"] == "photo"
+        method, _, photo, _ = bot.calls[0]
+        assert method == "photo"
+        assert isinstance(photo, BufferedInputFile)
+        assert photo.filename == "transparent.jpg"
+        with Image.open(BytesIO(photo.data)) as normalized:
+            assert normalized.format == "JPEG"
+            assert normalized.mode == "RGB"
+
+    import httpx
+
+    asyncio.run(run())
+
+
+def test_media_invalid_image_falls_back_to_buffered_document(monkeypatch):
+    from aiogram.types import BufferedInputFile
+
+    from app.services import media
+
+    async def run():
+        FakeAsyncClient.response = httpx.Response(
+            200,
+            content=b"not an image",
+            headers={"content-type": "image/jpeg"},
+            request=httpx.Request("GET", "https://files.example.com/bad.jpg"),
+        )
+        monkeypatch.setattr(media.httpx, "AsyncClient", FakeAsyncClient)
+        bot = FakeBot()
+        post = Post("yandere", "1", "https://files.example.com/bad.jpg")
+
+        result = await media.send_post(bot, 123, post, settings=Settings())
+
         assert result["method"] == "document"
-        assert bot.calls[0][0] == "document"
+        method, _, document, _ = bot.calls[0]
+        assert method == "document"
+        assert isinstance(document, BufferedInputFile)
+        assert document.data == b"not an image"
+
+    import httpx
+
+    asyncio.run(run())
+
+
+def test_media_photo_invalid_dimensions_falls_back_to_buffered_document(monkeypatch):
+    from aiogram.exceptions import TelegramBadRequest
+    from aiogram.methods import SendPhoto
+    from aiogram.types import BufferedInputFile
+
+    from app.services import media
+
+    async def run():
+        FakeAsyncClient.response = httpx.Response(
+            200,
+            content=make_image_bytes(image_format="JPEG"),
+            headers={"content-type": "image/jpeg"},
+            request=httpx.Request("GET", "https://files.example.com/image.jpg"),
+        )
+        monkeypatch.setattr(media.httpx, "AsyncClient", FakeAsyncClient)
+        error = TelegramBadRequest(
+            method=SendPhoto(chat_id=123, photo="x"),
+            message="Bad Request: PHOTO_INVALID_DIMENSIONS",
+        )
+        bot = FakeBot(photo_error=error)
+        post = Post("yandere", "1265418", "https://files.example.com/image.jpg")
+
+        result = await media.send_post(bot, 123, post, settings=Settings())
+
+        assert result["method"] == "document"
+        assert [call[0] for call in bot.calls] == ["photo", "document"]
+        _, _, document, _ = bot.calls[1]
+        assert isinstance(document, BufferedInputFile)
+        assert document.data.startswith(b"\xff\xd8")
 
     import httpx
 
@@ -366,7 +488,7 @@ def test_media_uses_proxy_url_from_settings(monkeypatch):
     async def run():
         FakeAsyncClient.response = httpx.Response(
             200,
-            content=b"jpeg-bytes",
+            content=make_image_bytes(image_format="JPEG"),
             headers={"content-type": "image/jpeg"},
             request=httpx.Request("GET", "https://files.example.com/a.jpg"),
         )

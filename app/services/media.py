@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import logging
+from io import BytesIO
 from pathlib import PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 import httpx
 from aiogram import Bot
 from aiogram.types import BufferedInputFile, Message
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from app.config import Settings, get_settings
 from app.models import Post
@@ -14,6 +16,9 @@ from app.models import Post
 logger = logging.getLogger(__name__)
 
 PHOTO_MAX_BYTES = 20 * 1024 * 1024
+PHOTO_MAX_SIDE = 4096
+PHOTO_MAX_DIMENSIONS_SUM = 10000
+PHOTO_MAX_ASPECT_RATIO = 20
 USER_AGENT = "booru-nsfw-anime-bot/1.0"
 
 
@@ -34,6 +39,66 @@ def _filename_from_url(url: str, content_type: str | None = None) -> str:
         else:
             name += ".jpg"
     return name
+
+
+def _jpeg_filename(filename: str) -> str:
+    stem = PurePosixPath(filename).stem or "image"
+    return f"{stem}.jpg"
+
+
+def _rgb_image(image: Image.Image) -> Image.Image:
+    if image.mode in {"RGBA", "LA", "P"} or (image.mode == "P" and "transparency" in image.info):
+        rgba = image.convert("RGBA")
+        background = Image.new("RGBA", rgba.size, (255, 255, 255, 255))
+        background.alpha_composite(rgba)
+        return background.convert("RGB")
+    if image.mode != "RGB":
+        return image.convert("RGB")
+    return image
+
+
+def _telegram_safe_size(width: int, height: int) -> tuple[int, int] | None:
+    if width < 1 or height < 1:
+        return None
+    aspect_ratio = max(width / height, height / width)
+    if aspect_ratio > PHOTO_MAX_ASPECT_RATIO:
+        return None
+
+    scale = min(PHOTO_MAX_SIDE / width, PHOTO_MAX_SIDE / height, 1.0)
+    if (width * scale) + (height * scale) > PHOTO_MAX_DIMENSIONS_SUM:
+        scale = PHOTO_MAX_DIMENSIONS_SUM / (width + height)
+
+    safe_width = max(1, int(width * scale))
+    safe_height = max(1, int(height * scale))
+    return safe_width, safe_height
+
+
+def _normalize_photo(
+    content: bytes, content_type: str | None
+) -> tuple[bytes, tuple[int, int]] | None:
+    try:
+        with Image.open(BytesIO(content)) as image:
+            logger.info(
+                "Original image: size=%s mode=%s content_type=%s",
+                image.size,
+                image.mode,
+                content_type,
+            )
+            image = ImageOps.exif_transpose(image)
+            image = _rgb_image(image)
+            safe_size = _telegram_safe_size(*image.size)
+            if safe_size is None:
+                logger.warning("Image cannot be normalized as Telegram photo: size=%s", image.size)
+                return None
+            if safe_size != image.size:
+                image = image.resize(safe_size, Image.Resampling.LANCZOS)
+            output = BytesIO()
+            image.save(output, format="JPEG", quality=90, optimize=True)
+            logger.info("Normalized image: size=%s", image.size)
+            return output.getvalue(), image.size
+    except (UnidentifiedImageError, OSError) as exc:
+        logger.warning("Pillow could not decode image for photo normalization: %r", exc)
+        return None
 
 
 async def _download_media(url: str, settings: Settings) -> tuple[bytes, str | None]:
@@ -80,23 +145,52 @@ async def send_post(
     try:
         content, content_type = await _download_media(post.file_url, settings)
         filename = _filename_from_url(post.file_url, content_type)
-        media_file = BufferedInputFile(content, filename=filename)
 
-        if content_type and content_type.startswith("image/") and len(content) <= PHOTO_MAX_BYTES:
-            message = await bot.send_photo(
-                chat_id,
-                media_file,
-                caption=caption,
-                reply_to_message_id=reply_to_message_id,
-            )
-        else:
-            message = await bot.send_document(
-                chat_id,
-                media_file,
-                caption=caption,
-                reply_to_message_id=reply_to_message_id,
-            )
-        logger.info("Buffered send success: content_type=%s size=%d", content_type, len(content))
+        if content_type and content_type.startswith("image/"):
+            normalized = _normalize_photo(content, content_type)
+            if normalized is not None:
+                normalized_content, _ = normalized
+                normalized_file = BufferedInputFile(
+                    normalized_content, filename=_jpeg_filename(filename)
+                )
+                try:
+                    message = await bot.send_photo(
+                        chat_id,
+                        normalized_file,
+                        caption=caption,
+                        reply_to_message_id=reply_to_message_id,
+                    )
+                    logger.info(
+                        "Buffered photo send success: content_type=%s size=%d normalized_size=%d",
+                        content_type,
+                        len(content),
+                        len(normalized_content),
+                    )
+                    return message
+                except Exception as photo_exc:  # noqa: BLE001
+                    logger.warning(
+                        "Buffered photo failed; document fallback used: error=%r", photo_exc
+                    )
+                    document_file = BufferedInputFile(
+                        normalized_content, filename=_jpeg_filename(filename)
+                    )
+                    return await bot.send_document(
+                        chat_id,
+                        document_file,
+                        caption=caption,
+                        reply_to_message_id=reply_to_message_id,
+                    )
+
+        media_file = BufferedInputFile(content, filename=filename)
+        message = await bot.send_document(
+            chat_id,
+            media_file,
+            caption=caption,
+            reply_to_message_id=reply_to_message_id,
+        )
+        logger.info(
+            "Buffered document send success: content_type=%s size=%d", content_type, len(content)
+        )
         return message
     except Exception as exc:  # noqa: BLE001
         download_error = exc
