@@ -32,6 +32,26 @@ SCHEMA = [
         post_id TEXT,
         created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )""",
+    """CREATE TABLE IF NOT EXISTS post_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        provider TEXT NOT NULL,
+        post_id TEXT NOT NULL,
+        file_url TEXT NOT NULL,
+        preview_url TEXT,
+        tags TEXT,
+        rating TEXT,
+        source_url TEXT,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )""",
+    """CREATE TABLE IF NOT EXISTS user_sessions (
+        user_id INTEGER PRIMARY KEY,
+        provider TEXT,
+        tags TEXT NOT NULL DEFAULT '',
+        mode TEXT NOT NULL DEFAULT 'random',
+        current_history_id INTEGER,
+        updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )""",
     """CREATE TABLE IF NOT EXISTS provider_settings (
         provider TEXT PRIMARY KEY,
         enabled INTEGER NOT NULL DEFAULT 1,
