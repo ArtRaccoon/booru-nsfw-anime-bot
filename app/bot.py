@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from contextvars import ContextVar
 from dataclasses import dataclass
 from urllib.parse import urlsplit, urlunsplit
 
@@ -21,13 +22,22 @@ class AppContext:
     channel: ChannelPostingService
 
 
-_context: AppContext | None = None
+_context: ContextVar[AppContext | None] = ContextVar("app_context", default=None)
+
+
+def set_context(ctx: AppContext) -> None:
+    _context.set(ctx)
+
+
+def clear_context() -> None:
+    _context.set(None)
 
 
 def get_context() -> AppContext:
-    if _context is None:
+    ctx = _context.get()
+    if ctx is None:
         raise RuntimeError("Application context is not initialized")
-    return _context
+    return ctx
 
 
 async def create_context() -> AppContext:
@@ -55,10 +65,14 @@ def create_bot(settings) -> Bot:
     return Bot(token=settings.bot_token)
 
 
-def build_dispatcher() -> Dispatcher:
+def build_dispatcher(ctx: AppContext | None = None) -> Dispatcher:
     from app.handlers import admin, channel, favorites, search, sources, start
 
-    dp = Dispatcher()
+    if ctx is not None:
+        set_context(ctx)
+    dp = Dispatcher(ctx=ctx)
+    if ctx is not None:
+        dp["ctx"] = ctx
     for router in (
         start.router,
         search.router,
@@ -72,14 +86,18 @@ def build_dispatcher() -> Dispatcher:
 
 
 async def main() -> None:
-    global _context
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
     if not settings.bot_token:
         raise RuntimeError("BOT_TOKEN is required to start Telegram polling")
-    _context = await create_context()
+    ctx = await create_context()
+    set_context(ctx)
     bot = create_bot(settings)
-    await build_dispatcher().start_polling(bot)
+    try:
+        await build_dispatcher(ctx).start_polling(bot)
+    finally:
+        clear_context()
+        await bot.session.close()
 
 
 if __name__ == "__main__":
