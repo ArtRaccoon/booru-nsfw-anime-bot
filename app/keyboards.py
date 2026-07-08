@@ -52,3 +52,35 @@ def random_tags_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="random:main")],
         ]
     )
+
+
+def favorites_empty_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="favorites:main")]
+        ]
+    )
+
+
+def favorites_art_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="⬅️ Назад", callback_data="favorites:previous"),
+                InlineKeyboardButton(text="🗑 Удалить", callback_data="favorites:delete"),
+                InlineKeyboardButton(text="➡️ Вперёд", callback_data="favorites:next"),
+            ],
+            [InlineKeyboardButton(text="🏷 Показать теги", callback_data="favorites:tags")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="favorites:main")],
+        ]
+    )
+
+
+def favorites_tags_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🗑 Удалить", callback_data="favorites:delete")],
+            [InlineKeyboardButton(text="🖼 Вернуться к арту", callback_data="favorites:artwork")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="favorites:main")],
+        ]
+    )

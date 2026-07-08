@@ -8,10 +8,10 @@ from aiogram.exceptions import TelegramBadRequest
 
 from app.bot import _aiogram_proxy_url, build_dispatcher, create_bot
 from app.config import Settings
+from app.handlers import favorites as favorites_handler
 from app.handlers import random_art as random_handler
 from app.handlers.start import (
     MAIN_MENU_TEXT,
-    MENU_FAVORITES_TEXT,
     MENU_PREMIUM_TEXT,
     MENU_SEARCH_TEXT,
     START_TEXT,
@@ -20,6 +20,9 @@ from app.handlers.start import (
     start,
 )
 from app.keyboards import (
+    favorites_art_keyboard,
+    favorites_empty_keyboard,
+    favorites_tags_keyboard,
     main_menu_keyboard,
     random_art_keyboard,
     random_tags_keyboard,
@@ -154,7 +157,6 @@ def test_main_menu_contains_exactly_four_expected_buttons():
 @pytest.mark.parametrize(
     ("callback_data", "expected_text"),
     [
-        ("menu:favorites", MENU_FAVORITES_TEXT),
         ("menu:search", MENU_SEARCH_TEXT),
         ("menu:premium", MENU_PREMIUM_TEXT),
     ],
@@ -397,3 +399,140 @@ def test_random_keyboards_have_expected_buttons():
         "random:artwork",
         "random:main",
     ]
+
+
+def _save_artworks(service, user_id=42, count=2):
+    for _ in range(count):
+        asyncio.run(service.next_artwork(user_id))
+        assert service.save_current(user_id)
+
+
+def test_favorites_open_empty_state(monkeypatch):
+    service = RandomArtService([SequenceProvider([])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    call = FakeCallback("menu:favorites")
+
+    asyncio.run(favorites_handler.favorites_open(call))
+
+    assert call.message.edits[0][0] == favorites_handler.EMPTY_FAVORITES_TEXT
+    assert call.message.edits[0][1]["reply_markup"] == favorites_empty_keyboard()
+
+
+def test_favorites_open_first_saved_artwork(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1")])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    _save_artworks(service, count=1)
+    call = FakeCallback("menu:favorites")
+
+    asyncio.run(favorites_handler.favorites_open(call))
+
+    assert call.message.edits[0][0] == "🦝 Енот Ищейка"
+    assert call.message.answers[0][0] == "https://example.test/1.jpg"
+    assert call.message.answers[0][1]["caption"] == "🦝 Енот Ищейка"
+    assert call.message.answers[0][1]["reply_markup"] == favorites_art_keyboard()
+
+
+def test_favorites_next_and_previous(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1"), _art("2")])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    _save_artworks(service, count=2)
+    favorites_handler.favorites_index[42] = 0
+    call = FakeCallback("favorites:next")
+
+    asyncio.run(favorites_handler.favorites_next(call))
+    assert favorites_handler.favorites_index[42] == 1
+    assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
+
+    asyncio.run(favorites_handler.favorites_previous(call))
+    assert favorites_handler.favorites_index[42] == 0
+    assert call.message.edits[-1][0].media == "https://example.test/1.jpg"
+
+
+def test_favorites_boundaries_notify(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1"), _art("2")])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    _save_artworks(service, count=2)
+    call = FakeCallback("favorites:previous")
+
+    favorites_handler.favorites_index[42] = 0
+    asyncio.run(favorites_handler.favorites_previous(call))
+    favorites_handler.favorites_index[42] = 1
+    asyncio.run(favorites_handler.favorites_next(call))
+
+    assert call.answers == [
+        ("Это первый сохранённый арт.", {}),
+        ("Это последний сохранённый арт.", {}),
+    ]
+    assert call.message.edits == []
+
+
+def test_favorites_tags_formatting_and_return_to_artwork(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1", ("a", "b", "c"))])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    _save_artworks(service, count=1)
+    favorites_handler.favorites_index[42] = 0
+    call = FakeCallback("favorites:tags")
+
+    asyncio.run(favorites_handler.favorites_tags(call))
+    assert (
+        call.message.edits[-1][0] == "🦝 Енот Ищейка\n\n<blockquote expandable>a, b, c</blockquote>"
+    )
+    assert call.message.edits[-1][1]["parse_mode"] == "HTML"
+    assert call.message.edits[-1][1]["reply_markup"] == favorites_tags_keyboard()
+
+    asyncio.run(favorites_handler.favorites_artwork(call))
+    assert call.message.edits[-1][0].media == "https://example.test/1.jpg"
+
+
+def test_favorites_delete_current_item(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1"), _art("2")])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    _save_artworks(service, count=2)
+    favorites_handler.favorites_index[42] = 0
+    call = FakeCallback("favorites:delete")
+
+    asyncio.run(favorites_handler.favorites_delete(call))
+
+    assert call.answers == [("Удалено из избранного", {})]
+    assert [key[1] for key in service.gallery(42).favorites] == ["2"]
+    assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
+
+
+def test_favorites_delete_last_item_shows_empty(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1")])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    _save_artworks(service, count=1)
+    favorites_handler.favorites_index[42] = 0
+    call = FakeCallback("favorites:delete")
+
+    asyncio.run(favorites_handler.favorites_delete(call))
+
+    assert call.message.edits[-1][0] == favorites_handler.EMPTY_FAVORITES_TEXT
+    assert call.message.edits[-1][1]["reply_markup"] == favorites_empty_keyboard()
+
+
+def test_favorites_main_menu_return_from_media_message_fallback():
+    call = FakeCallback("favorites:main")
+    call.message.fail_edit_text = True
+
+    asyncio.run(favorites_handler.favorites_main(call))
+
+    assert call.message.deletes == 1
+    assert call.message.answers == [(MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})]
+    assert call.answers == [(None, {})]
+
+
+def test_favorites_user_text_excludes_provider_source_and_rating(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1", ("tag", "source", "safe"))])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    _save_artworks(service, count=1)
+    call = FakeCallback("menu:favorites")
+
+    asyncio.run(favorites_handler.favorites_open(call))
+    user_texts = [call.message.edits[0][0], call.message.answers[0][1]["caption"]]
+
+    assert user_texts == ["🦝 Енот Ищейка", "🦝 Енот Ищейка"]
+    assert all(
+        "seq" not in text and "safe" not in text and "example.test" not in text
+        for text in user_texts
+    )
