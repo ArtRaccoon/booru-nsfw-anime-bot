@@ -3,8 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass
+from urllib.parse import urlsplit, urlunsplit
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.config import get_settings
 from app.db import Database
@@ -37,6 +39,22 @@ async def create_context() -> AppContext:
     return AppContext(db=db, providers=providers, channel=ChannelPostingService(db, providers))
 
 
+def _aiogram_proxy_url(proxy_url: str) -> str:
+    parsed = urlsplit(proxy_url)
+    if parsed.scheme == "socks5h":
+        return urlunsplit(parsed._replace(scheme="socks5"))
+    return proxy_url
+
+
+def create_bot(settings) -> Bot:
+    if settings.proxy_url:
+        logging.info("Telegram proxy enabled: %s", settings.proxy_url)
+        session = AiohttpSession(proxy=_aiogram_proxy_url(settings.proxy_url))
+        return Bot(token=settings.bot_token, session=session)
+    logging.info("Telegram proxy disabled")
+    return Bot(token=settings.bot_token)
+
+
 def build_dispatcher() -> Dispatcher:
     from app.handlers import admin, channel, favorites, search, sources, start
 
@@ -60,7 +78,7 @@ async def main() -> None:
     if not settings.bot_token:
         raise RuntimeError("BOT_TOKEN is required to start Telegram polling")
     _context = await create_context()
-    bot = Bot(settings.bot_token)
+    bot = create_bot(settings)
     await build_dispatcher().start_polling(bot)
 
 
