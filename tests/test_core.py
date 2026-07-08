@@ -195,3 +195,192 @@ def test_main_callbacks_can_access_workflow_context():
     report = asyncio.run(providers_report(FakeContext()))
 
     assert "gelbooru: работает" in report
+
+
+class FakeBot:
+    def __init__(self, *, direct_error: Exception | None = None):
+        self.calls = []
+        self.direct_error = direct_error
+
+    async def send_photo(self, chat_id, photo, **kwargs):
+        self.calls.append(("photo", chat_id, photo, kwargs))
+        if isinstance(photo, str) and self.direct_error:
+            raise self.direct_error
+        return {"method": "photo", "photo": photo}
+
+    async def send_document(self, chat_id, document, **kwargs):
+        self.calls.append(("document", chat_id, document, kwargs))
+        return {"method": "document", "document": document}
+
+    async def send_message(self, chat_id, text):
+        self.calls.append(("message", chat_id, text, {}))
+        return {"method": "message", "text": text}
+
+
+class FakeAsyncClient:
+    instances = []
+    response = None
+    error: Exception | None = None
+
+    def __init__(self, **kwargs):
+        self.kwargs = kwargs
+        self.requests = []
+        FakeAsyncClient.instances.append(self)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    async def get(self, url):
+        self.requests.append(url)
+        if FakeAsyncClient.error:
+            raise FakeAsyncClient.error
+        return FakeAsyncClient.response
+
+
+@pytest.fixture(autouse=True)
+def reset_fake_async_client():
+    FakeAsyncClient.instances = []
+    FakeAsyncClient.response = None
+    FakeAsyncClient.error = None
+    yield
+
+
+def test_media_sends_buffered_input_file_for_jpeg(monkeypatch):
+    from aiogram.types import BufferedInputFile
+
+    from app.services import media
+
+    async def run():
+        FakeAsyncClient.response = httpx.Response(
+            200,
+            content=b"jpeg-bytes",
+            headers={"content-type": "image/jpeg"},
+            request=httpx.Request("GET", "https://files.example.com/image"),
+        )
+        monkeypatch.setattr(media.httpx, "AsyncClient", FakeAsyncClient)
+        bot = FakeBot()
+        post = Post("yandere", "1", "https://files.example.com/image")
+
+        result = await media.send_post(bot, 123, post, settings=Settings(PROXY_URL="http://proxy"))
+
+        assert result["method"] == "photo"
+        method, chat_id, photo, kwargs = bot.calls[0]
+        assert method == "photo"
+        assert chat_id == 123
+        assert isinstance(photo, BufferedInputFile)
+        assert photo.data == b"jpeg-bytes"
+        assert photo.filename == "image.jpg"
+        assert kwargs["caption"] == media.post_caption(post)
+
+    import httpx
+
+    asyncio.run(run())
+
+
+def test_media_falls_back_to_url_if_download_fails(monkeypatch):
+    from app.services import media
+
+    async def run():
+        FakeAsyncClient.error = httpx.ConnectError("proxy failed")
+        monkeypatch.setattr(media.httpx, "AsyncClient", FakeAsyncClient)
+        bot = FakeBot()
+        post = Post("yandere", "1", "https://files.example.com/a.jpg")
+
+        result = await media.send_post(bot, 123, post, settings=Settings())
+
+        assert result["method"] == "photo"
+        assert bot.calls == [
+            (
+                "photo",
+                123,
+                "https://files.example.com/a.jpg",
+                {"caption": media.post_caption(post), "reply_to_message_id": None},
+            )
+        ]
+
+    import httpx
+
+    asyncio.run(run())
+
+
+def test_media_sends_non_image_as_document(monkeypatch):
+    from aiogram.types import BufferedInputFile
+
+    from app.services import media
+
+    async def run():
+        FakeAsyncClient.response = httpx.Response(
+            200,
+            content=b"video-bytes",
+            headers={"content-type": "video/mp4"},
+            request=httpx.Request("GET", "https://files.example.com/clip.mp4"),
+        )
+        monkeypatch.setattr(media.httpx, "AsyncClient", FakeAsyncClient)
+        bot = FakeBot()
+        post = Post("yandere", "1", "https://files.example.com/clip.mp4")
+
+        result = await media.send_post(bot, 123, post, settings=Settings())
+
+        assert result["method"] == "document"
+        method, _, document, _ = bot.calls[0]
+        assert method == "document"
+        assert isinstance(document, BufferedInputFile)
+        assert document.data == b"video-bytes"
+        assert document.filename == "clip.mp4"
+
+    import httpx
+
+    asyncio.run(run())
+
+
+def test_media_respects_photo_max_size(monkeypatch):
+    from app.services import media
+
+    async def run():
+        FakeAsyncClient.response = httpx.Response(
+            200,
+            content=b"x" * (media.PHOTO_MAX_BYTES + 1),
+            headers={"content-type": "image/jpeg"},
+            request=httpx.Request("GET", "https://files.example.com/large.jpg"),
+        )
+        monkeypatch.setattr(media.httpx, "AsyncClient", FakeAsyncClient)
+        bot = FakeBot()
+        post = Post("yandere", "1", "https://files.example.com/large.jpg")
+
+        result = await media.send_post(bot, 123, post, settings=Settings())
+
+        assert result["method"] == "document"
+        assert bot.calls[0][0] == "document"
+
+    import httpx
+
+    asyncio.run(run())
+
+
+def test_media_uses_proxy_url_from_settings(monkeypatch):
+    from app.services import media
+
+    async def run():
+        FakeAsyncClient.response = httpx.Response(
+            200,
+            content=b"jpeg-bytes",
+            headers={"content-type": "image/jpeg"},
+            request=httpx.Request("GET", "https://files.example.com/a.jpg"),
+        )
+        monkeypatch.setattr(media.httpx, "AsyncClient", FakeAsyncClient)
+        proxy_url = "socks5://127.0.0.1:1080"
+        post = Post("yandere", "1", "https://files.example.com/a.jpg")
+
+        await media.send_post(FakeBot(), 123, post, settings=Settings(PROXY_URL=proxy_url))
+
+        assert FakeAsyncClient.instances[0].kwargs["proxy"] == proxy_url
+        assert FakeAsyncClient.instances[0].kwargs["timeout"] == 20.0
+        assert FakeAsyncClient.instances[0].kwargs["headers"]["User-Agent"]
+        assert FakeAsyncClient.instances[0].requests == [post.file_url]
+
+    import httpx
+
+    asyncio.run(run())
