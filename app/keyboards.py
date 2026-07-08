@@ -22,6 +22,14 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def random_empty_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="random:main")]
+        ]
+    )
+
+
 def random_art_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
