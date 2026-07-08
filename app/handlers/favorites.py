@@ -2,14 +2,15 @@ from aiogram import Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
-from app.bot import get_context
+from app.bot import AppContext, get_context
 
 router = Router()
 
 
 @router.message(Command("favorites"))
-async def favorites(message: Message) -> None:
-    rows = await get_context().db.fetchall(
+async def favorites(message: Message, ctx: AppContext | None = None) -> None:
+    ctx = ctx or get_context()
+    rows = await ctx.db.fetchall(
         "SELECT * FROM favorites WHERE user_id = ? ORDER BY id DESC LIMIT 10",
         (message.from_user.id,),
     )
@@ -22,8 +23,9 @@ async def favorites(message: Message) -> None:
 
 
 @router.callback_query(lambda c: c.data == "favorites")
-async def favorites_button(call: CallbackQuery) -> None:
-    rows = await get_context().db.fetchall(
+async def favorites_button(call: CallbackQuery, ctx: AppContext | None = None) -> None:
+    ctx = ctx or get_context()
+    rows = await ctx.db.fetchall(
         "SELECT * FROM favorites WHERE user_id = ? ORDER BY id DESC LIMIT 10", (call.from_user.id,)
     )
     text = (

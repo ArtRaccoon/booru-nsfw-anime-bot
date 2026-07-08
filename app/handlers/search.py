@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, Message
 
-from app.bot import get_context
+from app.bot import AppContext, get_context
 from app.keyboards import post_nav
 from app.services.media import send_post
 
@@ -10,12 +10,12 @@ router = Router()
 
 
 @router.message(Command("search"))
-async def search_cmd(message: Message) -> None:
+async def search_cmd(message: Message, ctx: AppContext | None = None) -> None:
     tags = message.text.partition(" ")[2].strip()
     if not tags:
         await message.answer("Введите теги после /search")
         return
-    ctx = get_context()
+    ctx = ctx or get_context()
     provider, posts = await ctx.providers.search(tags)
     if not posts:
         await message.answer("Ничего не найдено.")
@@ -36,8 +36,8 @@ async def search_prompt(call: CallbackQuery) -> None:
 
 
 @router.callback_query(F.data == "random")
-async def random_art(call: CallbackQuery) -> None:
-    ctx = get_context()
+async def random_art(call: CallbackQuery, ctx: AppContext | None = None) -> None:
+    ctx = ctx or get_context()
     post = await ctx.providers.random()
     if not post:
         await call.message.edit_text("Не удалось найти случайный арт.")

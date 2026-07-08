@@ -149,3 +149,49 @@ def test_create_bot_uses_default_session_without_proxy():
         assert bot.session._proxy is None
     finally:
         asyncio.run(bot.session.close())
+
+
+class FakeProvidersForContext:
+    providers = {"gelbooru": object()}
+
+    async def healthcheck_all(self):
+        from app.models import ProviderStatus
+
+        return [ProviderStatus("gelbooru", True, 1, "ok")]
+
+
+class FakeContext:
+    db = object()
+    providers = FakeProvidersForContext()
+    channel = object()
+
+
+def test_build_dispatcher_initializes_context_before_polling():
+    from app.bot import build_dispatcher, clear_context, get_context
+
+    clear_context()
+    ctx = FakeContext()
+    dp = build_dispatcher(ctx)
+
+    assert dp["ctx"] is ctx
+    assert get_context() is ctx
+    clear_context()
+
+
+def test_get_context_does_not_raise_after_startup_setup():
+    from app.bot import clear_context, get_context, set_context
+
+    clear_context()
+    ctx = FakeContext()
+    set_context(ctx)
+
+    assert get_context() is ctx
+    clear_context()
+
+
+def test_main_callbacks_can_access_workflow_context():
+    from app.handlers.admin import providers_report
+
+    report = asyncio.run(providers_report(FakeContext()))
+
+    assert "gelbooru: работает" in report
