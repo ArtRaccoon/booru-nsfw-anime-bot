@@ -1,40 +1,51 @@
-from typing import Any
+from __future__ import annotations
 
-from app.models import BooruPost
-from app.providers.base import BaseProvider
+from app.models import Post
+from app.providers.base import Provider, safe_json
 
 
-class MoebooruProvider(BaseProvider):
+class MoebooruProvider(Provider):
     name = "moebooru"
+    base_url = ""
 
-    async def search(self, tags: str, limit: int, page: int) -> list[BooruPost]:
-        resp = await self.safe_get(
-            f"{self.base_url}/post.json", params={"tags": tags, "limit": limit, "page": page}
-        )
-        if resp is None:
-            return []
-        data = self.safe_json(resp)
+    async def search(self, tags: str = "", page: int = 1, limit: int = 20) -> list[Post]:
+        async with self.client() as client:
+            r = await client.get(
+                f"{self.base_url}/post.json", params={"tags": tags, "page": page, "limit": limit}
+            )
+        data = safe_json(r)
         if not isinstance(data, list):
             return []
-        return self.safe_normalize_many(data, ("file_url",))
-
-    def normalize_post(self, raw: dict[str, Any]) -> BooruPost:
-        post_id = str(raw.get("id", ""))
-        return BooruPost(
-            provider=self.name,
-            post_id=post_id,
-            file_url=raw.get("file_url", ""),
-            preview_url=raw.get("preview_url") or raw.get("sample_url"),
-            source_url=f"{self.base_url}/post/show/{post_id}" if post_id else None,
-            rating=raw.get("rating"),
-            tags=str(raw.get("tags", "")).split(),
-            score=raw.get("score"),
-        )
+        out = []
+        for item in data:
+            url = item.get("file_url")
+            if url and str(url).startswith("/"):
+                url = self.base_url + url
+            if url:
+                out.append(
+                    Post(
+                        self.name,
+                        str(item.get("id")),
+                        url,
+                        item.get("preview_url"),
+                        f"{self.base_url}/post/show/{item.get('id')}",
+                        item.get("rating"),
+                        item.get("tags") or "",
+                    )
+                )
+        return out
 
 
 class YandereProvider(MoebooruProvider):
     name = "yandere"
+    base_url = "https://yande.re"
 
 
 class KonachanProvider(MoebooruProvider):
     name = "konachan"
+    base_url = "https://konachan.com"
+
+
+class SakugabooruProvider(MoebooruProvider):
+    name = "sakugabooru"
+    base_url = "https://www.sakugabooru.com"

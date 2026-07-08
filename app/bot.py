@@ -1,70 +1,67 @@
+from __future__ import annotations
+
 import asyncio
 import logging
-from contextlib import suppress
+from dataclasses import dataclass
 
 from aiogram import Bot, Dispatcher
-from aiogram.client.session.aiohttp import AiohttpSession
 
-from app.channel_posting import start_scheduler
 from app.config import get_settings
-from app.database import Database
-from app.handlers import admin, catalog, favorites, group_posting, menu, providers, search, start
-from app.providers import build_registry
-from app.telegram_setup import setup_telegram_ui
+from app.db import Database
+from app.services.channel_posting import ChannelPostingService
+from app.services.providers import ProviderManager
 
 
-def create_bot(bot_token: str, proxy_url: str | None = None) -> Bot:
-    if proxy_url:
-        session = AiohttpSession(proxy=proxy_url)
-        return Bot(bot_token, session=session)
-    return Bot(bot_token)
+@dataclass
+class AppContext:
+    db: Database
+    providers: ProviderManager
+    channel: ChannelPostingService
+
+
+_context: AppContext | None = None
+
+
+def get_context() -> AppContext:
+    if _context is None:
+        raise RuntimeError("Application context is not initialized")
+    return _context
+
+
+async def create_context() -> AppContext:
+    settings = get_settings()
+    db = Database(settings.database_path)
+    await db.migrate()
+    providers = ProviderManager(settings, db)
+    await providers.ensure_settings()
+    return AppContext(db=db, providers=providers, channel=ChannelPostingService(db, providers))
+
+
+def build_dispatcher() -> Dispatcher:
+    from app.handlers import admin, channel, favorites, search, sources, start
+
+    dp = Dispatcher()
+    for router in (
+        start.router,
+        search.router,
+        favorites.router,
+        sources.router,
+        admin.router,
+        channel.router,
+    ):
+        dp.include_router(router)
+    return dp
 
 
 async def main() -> None:
+    global _context
     logging.basicConfig(level=logging.INFO)
     settings = get_settings()
     if not settings.bot_token:
-        raise RuntimeError("BOT_TOKEN is required")
-    db = Database(settings.database_path)
-    await db.connect()
-    provider_registry = build_registry(settings)
-    await provider_registry.add_enabled_candidates(db)
-    providers_map = provider_registry.providers
-    selected_default = provider_registry.select_default(settings.default_provider)
-    if selected_default != settings.default_provider:
-        logging.getLogger("providers").warning(
-            "Configured DEFAULT_PROVIDER %r is unavailable; using %r",
-            settings.default_provider,
-            selected_default,
-        )
-        settings.default_provider = selected_default
-
-    bot = create_bot(settings.bot_token, settings.proxy_url)
-    dp = Dispatcher(
-        db=db, settings=settings, providers_map=providers_map, provider_registry=provider_registry
-    )
-    await setup_telegram_ui(bot)
-
-    for router in (
-        start.router,
-        menu.router,
-        providers.router,
-        search.router,
-        favorites.router,
-        admin.router,
-        catalog.router,
-        group_posting.router,
-    ):
-        dp.include_router(router)
-    scheduler_task = start_scheduler(bot, db, providers_map)
-    try:
-        await dp.start_polling(bot)
-    finally:
-        scheduler_task.cancel()
-        with suppress(asyncio.CancelledError):
-            await scheduler_task
-        await bot.session.close()
-        await provider_registry.close()
+        raise RuntimeError("BOT_TOKEN is required to start Telegram polling")
+    _context = await create_context()
+    bot = Bot(settings.bot_token)
+    await build_dispatcher().start_polling(bot)
 
 
 if __name__ == "__main__":

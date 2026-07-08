@@ -1,16 +1,22 @@
-from pydantic import BaseModel
+from __future__ import annotations
+
+from dataclasses import dataclass
 
 
-class BooruPost(BaseModel):
+@dataclass(slots=True)
+class Post:
     provider: str
     post_id: str
     file_url: str
     preview_url: str | None = None
-    source_url: str | None = None
+    page_url: str | None = None
     rating: str | None = None
-    tags: list[str] = []
-    score: int | None = None
+    tags: str = ""
 
-    @property
-    def display_url(self) -> str:
-        return self.source_url or self.file_url
+
+@dataclass(slots=True)
+class ProviderStatus:
+    name: str
+    ok: bool
+    response_ms: int
+    message: str = ""
