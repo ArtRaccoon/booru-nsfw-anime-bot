@@ -1,199 +1,47 @@
 from aiogram import Router
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import CallbackQuery, Message
 
-from app.safety import is_admin
+from app.bot import get_context
+from app.config import get_settings
+from app.keyboards import admin_menu
 
 router = Router()
 
 
-async def require_admin(message: Message, settings) -> bool:
-    if not is_admin(message.from_user.id, settings.admin_ids):
-        await message.answer("Admin only.")
-        return False
-    return True
+def admin_only(user_id: int | None) -> bool:
+    return get_settings().is_admin(user_id)
 
 
-@router.message(Command("admin"))
-async def admin(message: Message, settings) -> None:
-    if await require_admin(message, settings):
-        await message.answer(
-            "Admin commands: /stats, /broadcast <text>, /provider_info <slug>, /reload_providers, "
-            "/test_provider <slug>, /list_disabled, /list_broken, /list_auth_required, "
-            "/enable_provider <slug>, /disable_provider <slug>, /set_global_provider <provider>, "
-            "/tag_stats, /tag_stats_user <telegram_id>, /tag_users <tag>, "
-            "/user_searches <telegram_id>, /channel_status"
-        )
+async def providers_report() -> str:
+    statuses = await get_context().providers.healthcheck_all()
+    lines = ["Проверка источников:"]
+    for s in statuses:
+        state = "работает" if s.ok else "недоступен"
+        lines.append(f"{s.name}: {state}, {s.response_ms} ms, {s.message}")
+    return "\n".join(lines)
 
 
-@router.message(Command("stats"))
-async def stats(message: Message, db, settings) -> None:
-    if not await require_admin(message, settings):
+@router.callback_query(lambda c: c.data == "admin")
+async def admin(call: CallbackQuery) -> None:
+    if not admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
         return
-    data = await db.get_stats()
-    await message.answer(
-        f"Users: {data['users']}\nFavorites: {data['favorites']}\nSearches: {data['searches']}"
-    )
+    await call.message.edit_text("Админка", reply_markup=admin_menu())
+    await call.answer()
 
 
-@router.message(Command("broadcast"))
-async def broadcast(message: Message, settings) -> None:
-    if await require_admin(message, settings):
-        await message.answer("Broadcast accepted (delivery queue placeholder).")
-
-
-@router.message(Command("reload_providers"))
-async def reload_providers(
-    message: Message, settings, provider_registry, providers_map, db
-) -> None:
-    if await require_admin(message, settings):
-        await provider_registry.reload(db)
-        providers_map.clear()
-        providers_map.update(provider_registry.providers)
-        await message.answer(
-            f"Reloaded {len(provider_registry.configs)} providers; {len(providers_map)} enabled."
-        )
-
-
-@router.message(Command("set_global_provider"))
-async def set_global_provider(message: Message, db, settings, providers_map) -> None:
-    if not await require_admin(message, settings):
+@router.message(Command("providers_check"))
+async def providers_check_cmd(message: Message) -> None:
+    if not admin_only(message.from_user.id if message.from_user else None):
         return
-    provider = message.text.split(maxsplit=1)[1].strip() if len(message.text.split()) > 1 else ""
-    if provider not in providers_map:
-        await message.answer("Unknown provider.")
+    await message.answer(await providers_report())
+
+
+@router.callback_query(lambda c: c.data == "providers_check")
+async def providers_check_btn(call: CallbackQuery) -> None:
+    if not admin_only(call.from_user.id):
+        await call.answer("Недоступно", show_alert=True)
         return
-    await db.conn.execute(
-        "INSERT INTO settings(key, value) VALUES('default_provider', ?) "
-        "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
-        (provider,),
-    )
-    await db.conn.commit()
-    settings.default_provider = provider
-    await message.answer(f"Global default provider set to {provider}.")
-
-
-def _arg(message: Message) -> str:
-    return message.text.split(maxsplit=1)[1].strip() if len(message.text.split()) > 1 else ""
-
-
-@router.message(Command("test_provider"))
-async def test_provider(message: Message, settings, provider_registry) -> None:
-    if not await require_admin(message, settings):
-        return
-    slug = _arg(message)
-    if slug not in provider_registry.configs:
-        await message.answer("Unknown provider.")
-        return
-    provider = provider_registry.providers.get(slug) or provider_registry.build_provider(slug)
-    try:
-        posts = await provider.search("", 1, 1)
-    except Exception:
-        posts = []
-    if slug not in provider_registry.providers:
-        await provider.close()
-    await message.answer(f"{slug}: {'OK' if posts else 'No results or unavailable'}")
-
-
-@router.message(Command("enable_provider"))
-async def enable_provider(message: Message, settings, provider_registry, providers_map) -> None:
-    if not await require_admin(message, settings):
-        return
-    slug = _arg(message)
-    if provider_registry.enable(slug):
-        providers_map.clear()
-        providers_map.update(provider_registry.providers)
-        await message.answer(f"Enabled provider {slug}.")
-    else:
-        await message.answer(
-            "Provider cannot be enabled (unknown, broken, auth-required, or no adapter)."
-        )
-
-
-@router.message(Command("disable_provider"))
-async def disable_provider(message: Message, settings, provider_registry, providers_map) -> None:
-    if not await require_admin(message, settings):
-        return
-    slug = _arg(message)
-    if await provider_registry.disable(slug):
-        providers_map.clear()
-        providers_map.update(provider_registry.providers)
-        await message.answer(f"Disabled provider {slug}.")
-    else:
-        await message.answer("Unknown provider.")
-
-
-@router.message(Command("list_disabled"))
-async def list_disabled(message: Message, settings, provider_registry) -> None:
-    if not await require_admin(message, settings):
-        return
-    slugs = [slug for slug in provider_registry.configs if slug not in provider_registry.providers]
-    await message.answer("Disabled providers:\n" + ("\n".join(slugs[:80]) or "None"))
-
-
-@router.message(Command("list_broken"))
-async def list_broken(message: Message, settings, provider_registry) -> None:
-    if not await require_admin(message, settings):
-        return
-    slugs = [slug for slug, cfg in provider_registry.configs.items() if cfg.broken]
-    await message.answer("Broken providers:\n" + ("\n".join(slugs[:80]) or "None"))
-
-
-@router.message(Command("list_auth_required"))
-async def list_auth_required(message: Message, settings, provider_registry) -> None:
-    if not await require_admin(message, settings):
-        return
-    slugs = [slug for slug, cfg in provider_registry.configs.items() if cfg.requires_auth]
-    await message.answer("Auth-required providers:\n" + ("\n".join(slugs[:80]) or "None"))
-
-
-def _format_counts(rows, empty: str = "Нет данных.") -> str:
-    return "\n".join(f"{row['tag']}: {row['count']}" for row in rows) or empty
-
-
-@router.message(Command("tag_stats"))
-async def tag_stats(message: Message, db, settings) -> None:
-    if not await require_admin(message, settings):
-        return
-    await message.answer("🏷 Топ тегов\n" + _format_counts(await db.top_tags(30)))
-
-
-@router.message(Command("tag_stats_user"))
-async def tag_stats_user(message: Message, db, settings) -> None:
-    if not await require_admin(message, settings):
-        return
-    try:
-        telegram_id = int(_arg(message))
-    except ValueError:
-        await message.answer("Использование: /tag_stats_user <telegram_id>")
-        return
-    await message.answer(
-        f"👤 Теги пользователя {telegram_id}\n" + _format_counts(await db.top_tags(30, telegram_id))
-    )
-
-
-@router.message(Command("tag_users"))
-async def tag_users(message: Message, db, settings) -> None:
-    if not await require_admin(message, settings):
-        return
-    tag = _arg(message)
-    if not tag:
-        await message.answer("Использование: /tag_users <tag>")
-        return
-    rows = await db.users_by_tag(tag, 30)
-    text = "\n".join(f"{r['telegram_id']} @{r['username'] or '-'}: {r['count']}" for r in rows)
-    await message.answer(f"Пользователи тега {tag}\n" + (text or "Нет данных."))
-
-
-@router.message(Command("user_searches"))
-async def user_searches(message: Message, db, settings) -> None:
-    if not await require_admin(message, settings):
-        return
-    try:
-        telegram_id = int(_arg(message))
-    except ValueError:
-        await message.answer("Использование: /user_searches <telegram_id>")
-        return
-    rows = await db.user_searches(telegram_id, 20)
-    text = "\n".join(f"{r['created_at']} [{r['provider']}]: {r['query']}" for r in rows)
-    await message.answer(f"🔎 Поиски пользователя {telegram_id}\n" + (text or "Нет данных."))
+    await call.message.edit_text(await providers_report(), reply_markup=admin_menu())
+    await call.answer()

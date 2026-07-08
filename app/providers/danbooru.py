@@ -1,33 +1,42 @@
-from typing import Any
+from __future__ import annotations
 
-from app.models import BooruPost
-from app.providers.base import BaseProvider
+from app.models import Post
+from app.providers.base import Provider, safe_json
 
 
-class DanbooruProvider(BaseProvider):
+class DanbooruProvider(Provider):
     name = "danbooru"
+    base_url = "https://danbooru.donmai.us"
 
-    async def search(self, tags: str, limit: int, page: int) -> list[BooruPost]:
-        resp = await self.safe_get(
-            f"{self.base_url}/posts.json", params={"tags": tags, "limit": limit, "page": page}
-        )
-        if resp is None:
-            return []
-        data = self.safe_json(resp)
+    async def search(self, tags: str = "", page: int = 1, limit: int = 20) -> list[Post]:
+        async with self.client() as client:
+            r = await client.get(
+                f"{self.base_url}/posts.json", params={"tags": tags, "page": page, "limit": limit}
+            )
+        data = safe_json(r)
         if not isinstance(data, list):
             return []
-        return self.safe_normalize_many(data, ("file_url", "large_file_url"))
+        posts = []
+        for item in data:
+            url = item.get("file_url") or item.get("large_file_url")
+            if url:
+                posts.append(
+                    Post(
+                        self.name,
+                        str(item.get("id")),
+                        url,
+                        item.get("preview_file_url"),
+                        f"{self.base_url}/posts/{item.get('id')}",
+                        item.get("rating"),
+                        item.get("tag_string") or "",
+                    )
+                )
+        return posts
 
-    def normalize_post(self, raw: dict[str, Any]) -> BooruPost:
-        tags = raw.get("tag_string") or " ".join(raw.get("tags", []))
-        post_id = str(raw.get("id", ""))
-        return BooruPost(
-            provider=self.name,
-            post_id=post_id,
-            file_url=raw.get("file_url") or raw.get("large_file_url") or "",
-            preview_url=raw.get("preview_file_url"),
-            source_url=f"{self.base_url}/posts/{post_id}" if post_id else raw.get("source"),
-            rating=raw.get("rating"),
-            tags=tags.split(),
-            score=raw.get("score"),
-        )
+
+class SafebooruDonmaiProvider(DanbooruProvider):
+    name = "safebooru_donmai"
+
+    async def search(self, tags: str = "", page: int = 1, limit: int = 20) -> list[Post]:
+        tags = f"rating:general {tags}".strip()
+        return await super().search(tags, page, limit)

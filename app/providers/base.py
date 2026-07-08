@@ -1,105 +1,48 @@
-import logging
+from __future__ import annotations
+
+import time
 from abc import ABC, abstractmethod
-from random import randint
 from typing import Any
 
 import httpx
 
-from app.models import BooruPost
-
-logger = logging.getLogger("providers")
+from app.models import Post, ProviderStatus
 
 
-class BaseProvider(ABC):
+class Provider(ABC):
     name: str
     base_url: str
 
-    def __init__(
-        self,
-        base_url: str,
-        timeout: float = 15.0,
-        proxy_url: str | None = None,
-        name: str | None = None,
-        api_url: str | None = None,
-        client: httpx.AsyncClient | None = None,
-    ) -> None:
-        self.base_url = base_url.rstrip("/")
-        self.api_url = api_url.rstrip("/") if api_url else None
-        if name:
-            self.name = name
-        self._owns_client = client is None
-        if client is not None:
-            self.client = client
-        else:
-            limits = httpx.Limits(max_connections=50, max_keepalive_connections=20)
-            timeout_config = httpx.Timeout(timeout, connect=min(timeout, 10.0))
-            client_kwargs: dict[str, Any] = {
-                "timeout": timeout_config,
-                "follow_redirects": True,
-                "limits": limits,
-                "headers": {"User-Agent": "booru-nsfw-anime-bot/0.1"},
-            }
-            if proxy_url:
-                client_kwargs["proxy"] = proxy_url
-            self.client = httpx.AsyncClient(**client_kwargs)
+    def __init__(self, proxy_url: str | None = None, timeout: float = 12.0):
+        self.proxy_url = proxy_url
+        self.timeout = timeout
+
+    def client(self) -> httpx.AsyncClient:
+        return httpx.AsyncClient(proxy=self.proxy_url, timeout=self.timeout, follow_redirects=True)
 
     @abstractmethod
-    async def search(self, tags: str, limit: int, page: int) -> list[BooruPost]: ...
+    async def search(self, tags: str = "", page: int = 1, limit: int = 20) -> list[Post]: ...
 
-    async def random(self, tags: str) -> BooruPost | None:
-        posts = await self.search(tags, limit=1, page=randint(1, 100))
+    async def random(self, tags: str = "") -> Post | None:
+        posts = await self.search(tags=tags, page=1, limit=50)
         return posts[0] if posts else None
 
-    @abstractmethod
-    def normalize_post(self, raw: dict[str, Any]) -> BooruPost: ...
-
-    def safe_normalize_many(
-        self, items: Any, url_keys: tuple[str, ...] = ("file_url",)
-    ) -> list[BooruPost]:
-        if not isinstance(items, list):
-            return []
-        posts: list[BooruPost] = []
-        for item in items:
-            if not isinstance(item, dict) or not any(item.get(key) for key in url_keys):
-                continue
-            try:
-                posts.append(self.normalize_post(item))
-            except Exception as exc:
-                logger.warning("provider %s returned invalid post payload: %s", self.name, exc)
-        return posts
-
-    async def safe_get(self, url: str, **kwargs: Any) -> httpx.Response | None:
-        for attempt in range(2):
-            try:
-                resp = await self.client.get(url, **kwargs)
-                if resp.status_code in {401, 403, 404, 429} or resp.status_code >= 500:
-                    logger.warning(
-                        "provider %s returned HTTP %s for %s", self.name, resp.status_code, url
-                    )
-                    return None
-                resp.raise_for_status()
-                return resp
-            except (httpx.TimeoutException, httpx.TransportError) as exc:
-                logger.warning(
-                    "provider %s request failed on attempt %s: %s",
-                    self.name,
-                    attempt + 1,
-                    exc,
-                )
-                if attempt == 0:
-                    continue
-            except httpx.HTTPStatusError as exc:
-                logger.warning("provider %s HTTP error: %s", self.name, exc)
-                return None
-        return None
-
-    def safe_json(self, resp: httpx.Response) -> Any:
+    async def healthcheck(self) -> ProviderStatus:
+        start = time.perf_counter()
         try:
-            return resp.json()
-        except ValueError as exc:
-            logger.warning("provider %s returned invalid JSON: %s", self.name, exc)
-            return []
+            posts = await self.search("", 1, 1)
+            ms = int((time.perf_counter() - start) * 1000)
+            return ProviderStatus(self.name, bool(posts), ms, "works" if posts else "empty")
+        except Exception as exc:  # noqa: BLE001 - provider failures must not crash the bot
+            ms = int((time.perf_counter() - start) * 1000)
+            return ProviderStatus(self.name, False, ms, str(exc)[:120])
 
-    async def close(self) -> None:
-        if self._owns_client:
-            await self.client.aclose()
+
+def safe_json(response: httpx.Response) -> Any | None:
+    ctype = response.headers.get("content-type", "")
+    if response.status_code >= 400 or "html" in ctype.lower():
+        return None
+    try:
+        return response.json()
+    except ValueError:
+        return None

@@ -6,12 +6,13 @@ build-backend = "setuptools.build_meta"
 name = "booru-nsfw-anime-bot"
 version = "0.1.0"
 description = "Telegram bot for NSFW anime booru search"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
   "aiogram>=3.8,<4",
   "httpx[socks]>=0.27,<1",
   "aiohttp-socks>=0.9,<1",
   "pydantic-settings>=2.3,<3",
+  "python-dotenv>=1,<2",
   "aiosqlite>=0.20,<1",
 ]
 
@@ -24,11 +25,10 @@ exclude = ["data*", "tests*"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
-asyncio_mode = "auto"
 testpaths = ["tests"]
