@@ -42,14 +42,24 @@ SCHEMA = [
         tags TEXT,
         rating TEXT,
         source_url TEXT,
-        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        mode TEXT NOT NULL DEFAULT 'random',
+        context_tags TEXT NOT NULL DEFAULT '',
+        history_index INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(user_id, provider, post_id, mode, context_tags)
     )""",
     """CREATE TABLE IF NOT EXISTS user_sessions (
         user_id INTEGER PRIMARY KEY,
         provider TEXT,
+        current_provider TEXT,
         tags TEXT NOT NULL DEFAULT '',
+        current_tags TEXT NOT NULL DEFAULT '',
         mode TEXT NOT NULL DEFAULT 'random',
+        current_mode TEXT NOT NULL DEFAULT 'random',
+        current_page INTEGER NOT NULL DEFAULT 1,
         current_history_id INTEGER,
+        current_history_index INTEGER NOT NULL DEFAULT 0,
+        current_message_id INTEGER,
         updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )""",
     """CREATE TABLE IF NOT EXISTS provider_settings (
@@ -97,6 +107,21 @@ class Database:
         try:
             for stmt in SCHEMA:
                 await db.execute(stmt)
+            for table, column, definition in [
+                ("post_history", "mode", "TEXT NOT NULL DEFAULT 'random'"),
+                ("post_history", "context_tags", "TEXT NOT NULL DEFAULT ''"),
+                ("post_history", "history_index", "INTEGER NOT NULL DEFAULT 0"),
+                ("user_sessions", "current_provider", "TEXT"),
+                ("user_sessions", "current_tags", "TEXT NOT NULL DEFAULT ''"),
+                ("user_sessions", "current_mode", "TEXT NOT NULL DEFAULT 'random'"),
+                ("user_sessions", "current_page", "INTEGER NOT NULL DEFAULT 1"),
+                ("user_sessions", "current_history_index", "INTEGER NOT NULL DEFAULT 0"),
+                ("user_sessions", "current_message_id", "INTEGER"),
+            ]:
+                cols = await db.execute(f"PRAGMA table_info({table})")
+                existing = {row[1] for row in await cols.fetchall()}
+                if column not in existing:
+                    await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
             await db.execute("INSERT OR IGNORE INTO channel_settings (id) VALUES (1)")
             await db.commit()
         finally:

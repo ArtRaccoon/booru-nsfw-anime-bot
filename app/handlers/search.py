@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from contextlib import suppress
+
 from aiogram import F, Router
 from aiogram.exceptions import TelegramAPIError
 from aiogram.filters import Command
@@ -11,6 +14,8 @@ from app.models import Post
 from app.services.media import post_caption, send_post
 
 router = Router()
+logger = logging.getLogger(__name__)
+MAX_UNIQUE_ATTEMPTS = 10
 
 
 def _row_to_post(row) -> Post:
@@ -25,14 +30,75 @@ def _row_to_post(row) -> Post:
     )
 
 
+def _session_provider(session) -> str | None:
+    if not session:
+        return None
+    return session["current_provider"] or session["provider"]
+
+
+def _session_tags(session) -> str:
+    if not session:
+        return ""
+    return session["current_tags"] or session["tags"] or ""
+
+
+def _session_mode(session) -> str:
+    if not session:
+        return "random"
+    return session["current_mode"] or session["mode"] or "random"
+
+
+async def _context_history(
+    ctx: AppContext, user_id: int, provider: str | None, tags: str, mode: str
+):
+    return await ctx.db.fetchall(
+        """
+        SELECT * FROM post_history
+        WHERE user_id = ? AND provider = COALESCE(?, provider) AND context_tags = ? AND mode = ?
+        ORDER BY history_index ASC, id ASC
+        """,
+        (user_id, provider, tags, mode),
+    )
+
+
 async def save_shown_post(
     ctx: AppContext, user_id: int, post: Post, *, tags: str = "", mode: str = "random"
-) -> None:
+) -> bool:
+    existing = await ctx.db.fetchone(
+        """
+        SELECT * FROM post_history
+        WHERE user_id = ? AND provider = ? AND post_id = ? AND context_tags = ? AND mode = ?
+        """,
+        (user_id, post.provider, post.post_id, tags, mode),
+    )
+    if existing:
+        logger.info(
+            "Duplicate skipped: user_id=%s provider=%s post_id=%s mode=%s tags=%r",
+            user_id,
+            post.provider,
+            post.post_id,
+            mode,
+            tags,
+        )
+        await _update_session(
+            ctx, user_id, existing["id"], existing["history_index"], post.provider, tags, mode
+        )
+        return False
+
+    row = await ctx.db.fetchone(
+        """
+        SELECT COALESCE(MAX(history_index), -1) + 1 AS next_index
+        FROM post_history WHERE user_id = ? AND provider = ? AND context_tags = ? AND mode = ?
+        """,
+        (user_id, post.provider, tags, mode),
+    )
+    history_index = int(row["next_index"] if row else 0)
     await ctx.db.execute(
         """
         INSERT INTO post_history(
-            user_id, provider, post_id, file_url, preview_url, tags, rating, source_url
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            user_id, provider, post_id, file_url, preview_url, tags, rating, source_url,
+            mode, context_tags, history_index
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             user_id,
@@ -43,29 +109,70 @@ async def save_shown_post(
             post.tags or tags,
             post.rating,
             post.page_url,
+            mode,
+            tags,
+            history_index,
         ),
     )
-    row = await ctx.db.fetchone(
+    inserted = await ctx.db.fetchone(
         """
         SELECT id FROM post_history
-        WHERE user_id = ? AND provider = ? AND post_id = ?
-        ORDER BY id DESC LIMIT 1
+        WHERE user_id = ? AND provider = ? AND post_id = ? AND context_tags = ? AND mode = ?
         """,
-        (user_id, post.provider, post.post_id),
+        (user_id, post.provider, post.post_id, tags, mode),
     )
-    history_id = row["id"] if row else None
+    await _update_session(ctx, user_id, inserted["id"], history_index, post.provider, tags, mode)
+    return True
+
+
+async def _update_session(
+    ctx,
+    user_id,
+    history_id,
+    history_index,
+    provider,
+    tags,
+    mode,
+    page: int | None = None,
+    message_id: int | None = None,
+):
+    old = await current_session(ctx, user_id)
+    current_page = page if page is not None else (old["current_page"] if old else 1)
+    current_message_id = (
+        message_id if message_id is not None else (old["current_message_id"] if old else None)
+    )
     await ctx.db.execute(
         """
-        INSERT INTO user_sessions(user_id, provider, tags, mode, current_history_id)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO user_sessions(
+            user_id, provider, current_provider, tags, current_tags, mode, current_mode,
+            current_page, current_history_id, current_history_index, current_message_id
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(user_id) DO UPDATE SET
-            provider = excluded.provider,
-            tags = excluded.tags,
-            mode = excluded.mode,
+            provider = excluded.provider, current_provider = excluded.current_provider,
+            tags = excluded.tags, current_tags = excluded.current_tags,
+            mode = excluded.mode, current_mode = excluded.current_mode,
+            current_page = excluded.current_page,
             current_history_id = excluded.current_history_id,
+            current_history_index = excluded.current_history_index,
+            current_message_id = COALESCE(
+                excluded.current_message_id, user_sessions.current_message_id
+            ),
             updated_at = CURRENT_TIMESTAMP
         """,
-        (user_id, post.provider, tags, mode, history_id),
+        (
+            user_id,
+            provider,
+            provider,
+            tags,
+            tags,
+            mode,
+            mode,
+            current_page,
+            history_id,
+            history_index,
+            current_message_id,
+        ),
     )
 
 
@@ -116,46 +223,137 @@ async def add_favorite(ctx: AppContext, user_id: int) -> bool:
 
 async def previous_post(ctx: AppContext, user_id: int) -> Post | None:
     session = await current_session(ctx, user_id)
-    current_id = session["current_history_id"] if session else None
-    if not current_id:
+    if not session or session["current_history_index"] <= 0:
         return None
+    index = session["current_history_index"] - 1
     row = await ctx.db.fetchone(
         """
         SELECT * FROM post_history
-        WHERE user_id = ? AND id < ?
-        ORDER BY id DESC LIMIT 1
+        WHERE user_id = ? AND provider = ? AND context_tags = ? AND mode = ? AND history_index = ?
         """,
-        (user_id, current_id),
+        (
+            user_id,
+            _session_provider(session),
+            _session_tags(session),
+            _session_mode(session),
+            index,
+        ),
     )
     if not row:
         return None
-    await ctx.db.execute(
-        """
-        UPDATE user_sessions
-        SET current_history_id = ?, updated_at = CURRENT_TIMESTAMP
-        WHERE user_id = ?
-        """,
-        (row["id"], user_id),
+    await _update_session(
+        ctx,
+        user_id,
+        row["id"],
+        row["history_index"],
+        row["provider"],
+        row["context_tags"],
+        row["mode"],
     )
+    logger.info("Navigation action=prev user_id=%s index=%s", user_id, index)
     return _row_to_post(row)
 
 
-async def fetch_next_post(ctx: AppContext, user_id: int) -> Post | None:
+async def next_post(ctx: AppContext, user_id: int) -> Post | None:
     session = await current_session(ctx, user_id)
-    provider = session["provider"] if session else None
-    tags = session["tags"] if session else ""
-    mode = session["mode"] if session else "random"
-    selected = provider or None
-    if mode == "search":
-        provider_name, posts = await ctx.providers.search(tags or "", selected, 1, 30, False)
-        post = posts[0] if posts else None
-        if post and not post.provider:
-            post.provider = provider_name
-    else:
-        post = await ctx.providers.random(tags or "", selected, False)
-    if post:
-        await save_shown_post(ctx, user_id, post, tags=tags or "", mode=mode or "random")
-    return post
+    if session:
+        index = session["current_history_index"] + 1
+        row = await ctx.db.fetchone(
+            """
+            SELECT * FROM post_history
+            WHERE user_id = ? AND provider = ? AND context_tags = ?
+                AND mode = ? AND history_index = ?
+            """,
+            (
+                user_id,
+                _session_provider(session),
+                _session_tags(session),
+                _session_mode(session),
+                index,
+            ),
+        )
+        if row:
+            await _update_session(
+                ctx,
+                user_id,
+                row["id"],
+                row["history_index"],
+                row["provider"],
+                row["context_tags"],
+                row["mode"],
+            )
+            logger.info("Navigation action=next_existing user_id=%s index=%s", user_id, index)
+            return _row_to_post(row)
+    return await fetch_next_post(ctx, user_id, action="next")
+
+
+async def fetch_next_post(ctx: AppContext, user_id: int, *, action: str = "more") -> Post | None:
+    session = await current_session(ctx, user_id)
+    provider = _session_provider(session)
+    tags = _session_tags(session)
+    mode = _session_mode(session)
+    page = int(session["current_page"] if session else 1)
+    history = await _context_history(ctx, user_id, provider, tags, mode)
+    shown = {(r["provider"], r["post_id"]) for r in history}
+    logger.info(
+        "Navigation action=%s user_id=%s index=%s history_len=%s",
+        action,
+        user_id,
+        session["current_history_index"] if session else 0,
+        len(history),
+    )
+
+    for attempt in range(MAX_UNIQUE_ATTEMPTS):
+        if mode == "search":
+            provider_name, posts = await ctx.providers.search(tags or "", provider, page, 30, False)
+            candidates = posts or []
+        else:
+            provider_name = provider
+            candidates = [await ctx.providers.random(tags or "", provider, False)]
+        for post in filter(None, candidates):
+            if not post.provider:
+                post.provider = provider_name or provider or "unknown"
+            logger.info(
+                "Fetched provider=%s post_id=%s attempt=%s page=%s",
+                post.provider,
+                post.post_id,
+                attempt + 1,
+                page,
+            )
+            if (post.provider, post.post_id) in shown:
+                logger.info(
+                    "Duplicate skipped: provider=%s post_id=%s", post.provider, post.post_id
+                )
+                continue
+            await save_shown_post(ctx, user_id, post, tags=tags, mode=mode)
+            if mode == "search":
+                await _update_session(
+                    ctx,
+                    user_id,
+                    (await current_session(ctx, user_id))["current_history_id"],
+                    (await current_session(ctx, user_id))["current_history_index"],
+                    post.provider,
+                    tags,
+                    mode,
+                    page=page,
+                )
+            return post
+        if mode == "search":
+            page += 1
+        else:
+            page += 1
+            if session:
+                await _update_session(
+                    ctx,
+                    user_id,
+                    session["current_history_id"],
+                    session["current_history_index"],
+                    provider,
+                    tags,
+                    mode,
+                    page=page,
+                )
+    return None
 
 
 async def show_post(target: Message | CallbackQuery, post: Post) -> Message | None:
@@ -168,11 +366,32 @@ async def show_post(target: Message | CallbackQuery, post: Post) -> Message | No
                 reply_markup=post_nav(),
             )
             return message
-    except TelegramAPIError:
-        pass
+    except TelegramAPIError as exc:
+        logger.info("Edit failed fallback used: %r", exc)
+        try:
+            await message.delete()
+        except TelegramAPIError as delete_exc:
+            logger.info("Delete old message failed: %r", delete_exc)
     sent = await send_post(bot, message.chat.id, post)
     await sent.edit_reply_markup(reply_markup=post_nav())
     return sent
+
+
+async def _show_and_track(call: CallbackQuery, ctx: AppContext, post: Post) -> None:
+    sent = await show_post(call, post)
+    if sent and getattr(sent, "message_id", None):
+        session = await current_session(ctx, call.from_user.id)
+        if session:
+            await _update_session(
+                ctx,
+                call.from_user.id,
+                session["current_history_id"],
+                session["current_history_index"],
+                _session_provider(session),
+                _session_tags(session),
+                _session_mode(session),
+                message_id=sent.message_id,
+            )
 
 
 @router.message(Command("search"))
@@ -192,7 +411,19 @@ async def search_cmd(message: Message, ctx: AppContext | None = None) -> None:
         (message.from_user.id, provider, tags, post.post_id),
     )
     await save_shown_post(ctx, message.from_user.id, post, tags=tags, mode="search")
-    await show_post(message, post)
+    sent = await show_post(message, post)
+    if sent and getattr(sent, "message_id", None):
+        session = await current_session(ctx, message.from_user.id)
+        await _update_session(
+            ctx,
+            message.from_user.id,
+            session["current_history_id"],
+            session["current_history_index"],
+            provider,
+            tags,
+            "search",
+            message_id=sent.message_id,
+        )
 
 
 @router.callback_query(F.data == "search")
@@ -209,27 +440,40 @@ async def random_art(call: CallbackQuery, ctx: AppContext | None = None) -> None
         await call.message.edit_text("Не удалось найти случайный арт.")
     else:
         await save_shown_post(ctx, call.from_user.id, post, mode="random")
-        await show_post(call, post)
+        await _show_and_track(call, ctx, post)
     await call.answer()
 
 
 @router.callback_query(F.data == "post:prev")
 async def post_prev(call: CallbackQuery, ctx: AppContext | None = None) -> None:
-    post = await previous_post(ctx or get_context(), call.from_user.id)
+    ctx = ctx or get_context()
+    post = await previous_post(ctx, call.from_user.id)
     if not post:
-        await call.answer("Предыдущих постов нет", show_alert=True)
+        await call.answer("Это первый пост", show_alert=True)
         return
-    await show_post(call, post)
+    await _show_and_track(call, ctx, post)
     await call.answer()
 
 
-@router.callback_query(F.data.in_({"post:next", "post:more"}))
-async def post_next_more(call: CallbackQuery, ctx: AppContext | None = None) -> None:
-    post = await fetch_next_post(ctx or get_context(), call.from_user.id)
+@router.callback_query(F.data == "post:next")
+async def post_next(call: CallbackQuery, ctx: AppContext | None = None) -> None:
+    ctx = ctx or get_context()
+    post = await next_post(ctx, call.from_user.id)
     if not post:
-        await call.answer("Не удалось найти ещё арт", show_alert=True)
+        await call.answer("Не нашла новый арт, попробуй ещё раз", show_alert=True)
         return
-    await show_post(call, post)
+    await _show_and_track(call, ctx, post)
+    await call.answer()
+
+
+@router.callback_query(F.data == "post:more")
+async def post_more(call: CallbackQuery, ctx: AppContext | None = None) -> None:
+    ctx = ctx or get_context()
+    post = await fetch_next_post(ctx, call.from_user.id, action="more")
+    if not post:
+        await call.answer("Не нашла новый арт, попробуй ещё раз", show_alert=True)
+        return
+    await _show_and_track(call, ctx, post)
     await call.answer()
 
 
@@ -241,5 +485,11 @@ async def post_fav(call: CallbackQuery, ctx: AppContext | None = None) -> None:
 
 @router.callback_query(F.data == "menu:home")
 async def post_home(call: CallbackQuery) -> None:
-    await call.message.edit_text("Главное меню", reply_markup=main_menu())
+    try:
+        await call.message.edit_text("Главное меню", reply_markup=main_menu())
+    except TelegramAPIError as exc:
+        logger.info("Home edit failed fallback used: %r", exc)
+        with suppress(TelegramAPIError):
+            await call.message.delete()
+        await call.message.answer("Главное меню", reply_markup=main_menu())
     await call.answer()
