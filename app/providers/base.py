@@ -6,6 +6,8 @@ from typing import Any
 import httpx
 
 from app.models import BooruPost
+from app.providers.download import fetch_image_bytes
+from app.providers.prober import ProbeResult
 
 logger = logging.getLogger("providers")
 
@@ -52,6 +54,20 @@ class BaseProvider(ABC):
 
     @abstractmethod
     def normalize_post(self, raw: dict[str, Any]) -> BooruPost: ...
+
+    async def get_post(self, post_id: str) -> BooruPost | None:
+        posts = await self.search(f"id:{post_id}", limit=1, page=1)
+        return posts[0] if posts else None
+
+    async def download(self, post: BooruPost) -> bytes:
+        return await fetch_image_bytes(post.file_url, client=self.client, referer=self.base_url)
+
+    async def healthcheck(self) -> ProbeResult:
+        from app.providers.prober import probe_candidate
+
+        return await probe_candidate(
+            self.base_url, getattr(self, "engine", "unknown"), user_agent="booru-nsfw-anime-bot/0.1"
+        )
 
     def safe_normalize_many(
         self, items: Any, url_keys: tuple[str, ...] = ("file_url",)

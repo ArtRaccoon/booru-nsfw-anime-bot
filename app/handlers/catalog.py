@@ -47,12 +47,12 @@ def counts_text(c: dict) -> str:
     return (
         "🗂 Каталог источников\n\n"
         f"Всего: {c.get('total', 0)}\n"
-        f"Доступных: {c.get('available', 0)}\n"
+        f"Рабочих: {c.get('available', 0)}\n"
         f"Включено: {c.get('enabled', 0)}\n"
-        f"Непроверенных: {c.get('unchecked', 0)}\n"
-        f"Сломанных: {c.get('broken', 0)}\n"
-        f"Auth: {c.get('auth_required', 0)}\n"
-        f"No API: {c.get('no_api', 0)}"
+        f"Недоступно: {c.get('broken', 0) + c.get('timeout', 0) + c.get('error', 0)}\n"
+        f"Без API: {c.get('no_api', 0)}\n"
+        f"Авторизация: {c.get('auth_required', 0)}\n"
+        f"Не проверено: {c.get('unchecked', 0)}"
     )
 
 
@@ -107,6 +107,11 @@ def report_text(report: dict) -> str:
     )
 
 
+def _bar(done: int, total: int, width: int = 10) -> str:
+    filled = int(width * done / max(1, total))
+    return "█" * filled + "░" * (width - filled)
+
+
 async def _run_catalog_check(message: Message, db, settings, rows, remaining_filter) -> None:
     global catalog_check_running
     if catalog_check_running:
@@ -117,7 +122,11 @@ async def _run_catalog_check(message: Message, db, settings, rows, remaining_fil
     counts: dict[str, int] = {}
     done = 0
     total = len(rows)
-    progress = await message.answer(f"🧪 Проверяю источники: 0/{total}")
+    try:
+        await message.edit_text(f"🧪 Проверяю источники:\n{_bar(0, total)}\n0 / {total}")
+        progress = message
+    except Exception:
+        progress = await message.answer(f"🧪 Проверяю источники:\n{_bar(0, total)}\n0 / {total}")
     sem = asyncio.Semaphore(max(1, settings.booru_catalog_probe_concurrency))
 
     async def one(row):
@@ -132,7 +141,11 @@ async def _run_catalog_check(message: Message, db, settings, rows, remaining_fil
             done += 1
             if done % 5 == 0 or done == total:
                 with suppress(Exception):
-                    await progress.edit_text(f"🧪 Проверяю источники: {done}/{total}")
+                    text = (
+                        f"🧪 Проверяю источники:\n{_bar(done, total)}\n"
+                        f"{done} / {total}\nПроверяется: {row['name']}"
+                    )
+                    await progress.edit_text(text)
 
     try:
         await asyncio.gather(*(one(r) for r in rows))
@@ -160,6 +173,9 @@ async def _check_batch(
         statuses=statuses, engine=engine, limit=limit
     )
     if not rows:
+        with suppress(Exception):
+            await message.edit_text("Нет источников для проверки.", reply_markup=catalog_keyboard())
+            return
         await message.answer("Нет источников для проверки.")
         return
     await _run_catalog_check(message, db, settings, rows, {"statuses": statuses, "engine": engine})
@@ -314,6 +330,9 @@ async def catalog_check_all(message: Message, db, settings) -> None:
         total = max_run
     rows = await db.list_provider_candidates_for_check(statuses=RETRYABLE_STATUSES, limit=total)
     if not rows:
+        with suppress(Exception):
+            await message.edit_text("Нет источников для проверки.", reply_markup=catalog_keyboard())
+            return
         await message.answer("Нет источников для проверки.")
         return
     await _run_catalog_check(message, db, settings, rows, {"statuses": RETRYABLE_STATUSES})
@@ -444,22 +463,45 @@ async def catalog_buttons(
     action = callback.data.split(":", 1)[1]
     if action == "import":
         await catalog_import(callback.message, db, settings)
-    elif action in {"check_batch", "resume"}:
-        await _check_batch(callback.message, db, settings)
+    elif action in {"check_batch", "resume", "check_all"}:
+        await _check_batch(
+            callback.message,
+            db,
+            settings,
+            limit=(
+                settings.booru_catalog_check_all_max
+                if action == "check_all"
+                else CATALOG_BATCH_DEFAULT
+            ),
+        )
     elif action == "stop":
         catalog_check_stop_event.set()
-        await callback.message.answer(
-            "Проверка остановлена. Уже сохранённые результаты не потеряны."
+        await callback.message.edit_text(
+            "Проверка остановлена. Уже сохранённые результаты не потеряны.",
+            reply_markup=catalog_keyboard(),
         )
     elif action == "report":
-        await callback.message.answer(report_text(await db.provider_catalog_report()))
+        await callback.message.edit_text(
+            report_text(await db.provider_catalog_report()), reply_markup=catalog_keyboard()
+        )
     elif action == "enable_available":
         if provider_registry is None or providers_map is None:
             await callback.message.answer("Используй команду /catalog_enable_available [engine].")
         else:
             rows = await db.enable_available_candidates(limit=50)
             await reload_registry(provider_registry, providers_map, db)
-            await callback.message.answer("Включено:\n" + rows_text(rows))
+            await callback.message.edit_text(
+                "Включено:\n" + rows_text(rows), reply_markup=catalog_keyboard()
+            )
+    elif action == "disable_all":
+        rows = await db.list_provider_candidates(limit=10000)
+        for row in rows:
+            await db.set_candidate_enabled(row["slug"], False)
+        if provider_registry is not None and providers_map is not None:
+            await reload_registry(provider_registry, providers_map, db)
+        await callback.message.edit_text(
+            "Все источники выключены.", reply_markup=catalog_keyboard()
+        )
     elif action == "available":
         await callback.message.answer(rows_text(await db.list_provider_candidates("available", 40)))
     elif action == "unchecked":

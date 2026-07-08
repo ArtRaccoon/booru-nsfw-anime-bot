@@ -75,10 +75,15 @@ class Database:
               post_id TEXT,
               file_url TEXT,
               tags TEXT,
+              sha256 TEXT,
+              md5 TEXT,
+              phash TEXT,
               posted_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
             );
             CREATE UNIQUE INDEX IF NOT EXISTS idx_group_post_unique
               ON group_post_history(target_chat_id, provider, post_id);
+            CREATE INDEX IF NOT EXISTS idx_group_post_hashes
+              ON group_post_history(target_chat_id, sha256, md5, phash);
             CREATE TABLE IF NOT EXISTS provider_candidates (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               slug TEXT UNIQUE NOT NULL,
@@ -109,6 +114,9 @@ class Database:
             ("users", "provider_cursor INTEGER DEFAULT 0"),
             ("group_posting_settings", "provider_strategy TEXT DEFAULT 'round_robin'"),
             ("group_posting_settings", "provider_cursor INTEGER DEFAULT 0"),
+            ("group_post_history", "sha256 TEXT"),
+            ("group_post_history", "md5 TEXT"),
+            ("group_post_history", "phash TEXT"),
         ]:
             col = coldef.split()[0]
             cols = [
@@ -162,7 +170,9 @@ class Database:
 
     async def set_user_provider_mode(self, telegram_id: int, mode: str) -> None:
         assert self.conn
-        if mode not in {"selected", "rotation", "fallback"}:
+        aliases = {"auto": "fallback", "only_selected": "selected", "round_robin": "rotation"}
+        mode = aliases.get(mode, mode)
+        if mode not in {"selected", "rotation", "fallback", "random"}:
             raise ValueError("invalid provider mode")
         await self.conn.execute(
             "UPDATE users SET user_provider_mode=? WHERE telegram_id=?", (mode, telegram_id)
@@ -586,30 +596,53 @@ class Database:
         )
         await self.conn.commit()
 
-    async def group_post_seen(self, target_chat_id: int | str, provider: str, post_id: str) -> bool:
+    async def group_post_seen(
+        self,
+        target_chat_id: int | str,
+        provider: str,
+        post_id: str,
+        *,
+        sha256: str | None = None,
+        md5: str | None = None,
+        phash: str | None = None,
+    ) -> bool:
         assert self.conn
         row = await (
             await self.conn.execute(
                 """
                 SELECT 1 FROM group_post_history
-                WHERE target_chat_id=? AND provider=? AND post_id=?
+                WHERE target_chat_id=? AND (
+                    (provider=? AND post_id=?)
+                    OR (? IS NOT NULL AND sha256=?)
+                    OR (? IS NOT NULL AND md5=?)
+                    OR (? IS NOT NULL AND phash=?)
+                )
                 """,
-                (target_chat_id, provider, post_id),
+                (target_chat_id, provider, post_id, sha256, sha256, md5, md5, phash, phash),
             )
         ).fetchone()
         return row is not None
 
     async def add_group_post_history(
-        self, target_chat_id: int | str, provider: str, post_id: str, file_url: str, tags: str
+        self,
+        target_chat_id: int | str,
+        provider: str,
+        post_id: str,
+        file_url: str,
+        tags: str,
+        *,
+        sha256: str | None = None,
+        md5: str | None = None,
+        phash: str | None = None,
     ) -> None:
         assert self.conn
         await self.conn.execute(
             """
             INSERT OR IGNORE INTO group_post_history(
-                target_chat_id, provider, post_id, file_url, tags
-            ) VALUES(?, ?, ?, ?, ?)
+                target_chat_id, provider, post_id, file_url, tags, sha256, md5, phash
+            ) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (target_chat_id, provider, post_id, file_url, tags),
+            (target_chat_id, provider, post_id, file_url, tags, sha256, md5, phash),
         )
         await self.conn.commit()
 
