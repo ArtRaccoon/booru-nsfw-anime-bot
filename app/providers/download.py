@@ -23,13 +23,17 @@ async def fetch_image_bytes(
     referer: str | None = None,
     timeout: float = 30.0,
     max_bytes: int = 25 * 1024 * 1024,
+    proxy_url: str | None = None,
 ) -> bytes:
     headers = dict(DEFAULT_HEADERS)
     if referer:
         headers["Referer"] = referer
     owns = client is None
     if client is None:
-        client = httpx.AsyncClient(timeout=timeout, follow_redirects=True, headers=headers)
+        client_kwargs = {"timeout": timeout, "follow_redirects": True, "headers": headers}
+        if proxy_url:
+            client_kwargs["proxy"] = proxy_url
+        client = httpx.AsyncClient(**client_kwargs)
     try:
         resp = await client.get(url, headers=headers)
         resp.raise_for_status()

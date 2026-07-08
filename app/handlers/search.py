@@ -1,10 +1,12 @@
 import logging
+from pathlib import PurePosixPath
+from urllib.parse import urlparse
 
 from aiogram import F, Router
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import CallbackQuery, InputMediaPhoto, Message
+from aiogram.types import CallbackQuery, InputMediaDocument, InputMediaPhoto, Message
 
 from app.keyboards import post_keyboard
 from app.models import BooruPost
@@ -19,6 +21,33 @@ router = Router()
 logger = logging.getLogger(__name__)
 limit_states: dict[int, LimitState] = {}
 post_cache: dict[tuple[int, str], BooruPost] = {}
+
+PHOTO_EXTENSIONS = (".jpg", ".jpeg", ".png", ".webp")
+
+
+def _media_filename(post: BooruPost) -> str:
+    suffix = PurePosixPath(urlparse(post.file_url).path).suffix or ".bin"
+    return f"{post.provider}_{post.post_id}{suffix}"
+
+
+def _is_telegram_photo_url(url: str) -> bool:
+    clean_url = url.lower().split("?", 1)[0]
+    return clean_url.endswith(PHOTO_EXTENSIONS)
+
+
+async def _send_post_media(
+    target: Message, media_file, post: BooruPost, key: str, page: int
+) -> Message:
+    markup = post_keyboard(key, page)
+    if _is_telegram_photo_url(post.file_url):
+        return await target.answer_photo(media_file, caption=caption_for(post), reply_markup=markup)
+    return await target.answer_document(media_file, caption=caption_for(post), reply_markup=markup)
+
+
+def _input_media_for_post(media_file, post: BooruPost):
+    if _is_telegram_photo_url(post.file_url):
+        return InputMediaPhoto(media=media_file or post.file_url, caption=caption_for(post))
+    return InputMediaDocument(media=media_file or post.file_url, caption=caption_for(post))
 
 
 class SearchInput(StatesGroup):
@@ -100,6 +129,7 @@ async def render_post(
     *,
     update_existing: bool = False,
     user_id: int | None = None,
+    proxy_url: str | None = None,
 ) -> None:
     user_id = user_id or target.from_user.id
     session = callback_sessions.get(key, user_id)
@@ -113,10 +143,10 @@ async def render_post(
     tag_messages = format_full_tags_messages(" ".join(post.tags))
 
     try:
-        image_bytes = await fetch_image_bytes(post.file_url, referer=post.source_url)
-        image_file = as_buffered_input_file(
-            image_bytes, filename=f"{post.provider}_{post.post_id}.jpg"
+        image_bytes = await fetch_image_bytes(
+            post.file_url, referer=post.source_url, proxy_url=proxy_url
         )
+        image_file = as_buffered_input_file(image_bytes, filename=_media_filename(post))
     except Exception as exc:
         logger.warning("failed to download image before Telegram upload: %s", exc)
         image_file = None
@@ -125,13 +155,9 @@ async def render_post(
         try:
             if image_file is None:
                 raise RuntimeError("image download failed")
-            sent = await target.answer_photo(
-                image_file,
-                caption=caption_for(post),
-                reply_markup=post_keyboard(key, page),
-            )
+            sent = await _send_post_media(target, image_file, post, key, page)
         except Exception as exc:
-            logger.warning("failed to send photo: %s", exc)
+            logger.warning("failed to send media: %s", exc)
             try:
                 sent = await _send_fallback_text(target, key, post, page)
             except Exception as fallback_exc:
@@ -148,7 +174,7 @@ async def render_post(
         await target.bot.edit_message_media(
             chat_id=target.chat.id,
             message_id=session.image_message_id,
-            media=InputMediaPhoto(media=image_file or post.file_url, caption=caption_for(post)),
+            media=_input_media_for_post(image_file, post),
             reply_markup=markup,
         )
     except Exception as exc:
@@ -157,11 +183,9 @@ async def render_post(
         try:
             if image_file is None:
                 raise RuntimeError("image download failed")
-            sent = await target.answer_photo(
-                image_file, caption=caption_for(post), reply_markup=markup
-            )
+            sent = await _send_post_media(target, image_file, post, key, page)
         except Exception as send_exc:
-            logger.warning("failed to send replacement photo: %s", send_exc)
+            logger.warning("failed to send replacement media: %s", send_exc)
             fallback = f"Не удалось отправить изображение. Ссылка: {post.display_url}"
             if not await _edit_text_message(target, session.image_message_id, fallback):
                 try:
@@ -282,7 +306,15 @@ async def run_search(
         )
         key = callback_sessions.create(session)
     post_cache[(user_id, post.post_id)] = post
-    await render_post(message, key, post, page, update_existing=update_existing, user_id=user_id)
+    await render_post(
+        message,
+        key,
+        post,
+        page,
+        update_existing=update_existing,
+        user_id=user_id,
+        proxy_url=settings.proxy_url,
+    )
 
 
 @router.message(Command("search"))

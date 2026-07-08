@@ -21,6 +21,7 @@ class DummyTarget:
         )
         self.answer = AsyncMock(side_effect=self._answer)
         self.answer_photo = AsyncMock(side_effect=self._answer_photo)
+        self.answer_document = AsyncMock(side_effect=self._answer_photo)
         self._next_id = 100
 
     def _message(self):
@@ -127,6 +128,33 @@ def test_favorite_callback_answers_without_sending_message():
     callback.answer.assert_awaited_once_with("Добавлено в избранное.")
     callback.message.answer.assert_not_awaited()
     callback.message.answer_photo.assert_not_awaited()
+
+
+def test_non_photo_posts_are_sent_as_documents(monkeypatch):
+    target = DummyTarget()
+    session = SearchSession(user_id=1, provider="danbooru", query="q")
+    key = callback_sessions.create(session)
+    post = BooruPost(
+        provider="danbooru",
+        post_id="3",
+        file_url="https://cdn.test/3.webm?download=1",
+        tags=["animated"],
+    )
+
+    async def fake_fetch(*args, **kwargs):
+        assert kwargs["proxy_url"] == "socks5://127.0.0.1:1080"
+        return b"video"
+
+    monkeypatch.setattr(search, "fetch_image_bytes", fake_fetch)
+
+    asyncio.run(
+        search.render_post(target, key, post, 1, user_id=1, proxy_url="socks5://127.0.0.1:1080")
+    )
+
+    target.answer_document.assert_awaited_once()
+    target.answer_photo.assert_not_awaited()
+    sent_file = target.answer_document.await_args.args[0]
+    assert sent_file.filename == "danbooru_3.webm"
 
 
 def test_render_update_errors_are_logged_not_raised(caplog):
