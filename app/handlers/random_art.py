@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InputMediaPhoto
 
 from app.keyboards import (
@@ -12,11 +13,12 @@ from app.keyboards import (
     random_tags_keyboard,
 )
 from app.random_art import (
-    ALREADY_SAVED_TEXT,
     FIRST_ART_TEXT,
     INITIAL_EMPTY_ART_TEXT,
     NO_UNIQUE_ART_TEXT,
     RANDOM_TITLE,
+    SAVE_DUPLICATE_NOTIFICATION_TEXT,
+    SAVE_SUCCESS_NOTIFICATION_TEXT,
     RandomArtService,
     format_tags_text,
 )
@@ -107,9 +109,11 @@ async def random_save(call: CallbackQuery) -> None:
         await call.answer()
         return
     if random_art_service.save_current(user_id):
-        await call.answer()
+        logging.info("favorite saved notification (%s)", user_id)
+        await call.answer(SAVE_SUCCESS_NOTIFICATION_TEXT)
     else:
-        await call.answer(ALREADY_SAVED_TEXT)
+        logging.info("favorite duplicate notification (%s)", user_id)
+        await call.answer(SAVE_DUPLICATE_NOTIFICATION_TEXT)
 
 
 @router.callback_query(F.data == "random:tags")
@@ -148,6 +152,13 @@ async def random_artwork(call: CallbackQuery) -> None:
 async def random_main_menu(call: CallbackQuery) -> None:
     from app.handlers.start import MAIN_MENU_TEXT
 
+    user_id = _user_id(call)
+    logging.info("random main menu clicked (%s)", user_id)
     if call.message:
-        await call.message.edit_text(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+        try:
+            await call.message.edit_text(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+        except TelegramBadRequest:
+            await call.message.delete()
+            await call.message.answer(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+    logging.info("random main menu returned (%s)", user_id)
     await call.answer()

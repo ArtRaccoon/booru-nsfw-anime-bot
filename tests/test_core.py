@@ -4,6 +4,7 @@ import asyncio
 
 import pytest
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.exceptions import TelegramBadRequest
 
 from app.bot import _aiogram_proxy_url, build_dispatcher, create_bot
 from app.config import Settings
@@ -71,12 +72,19 @@ class FakeMessage:
     def __init__(self):
         self.answers = []
         self.edits = []
+        self.deletes = 0
+        self.fail_edit_text = False
 
     async def answer(self, text, **kwargs):
         self.answers.append((text, kwargs))
 
     async def edit_text(self, text, **kwargs):
+        if self.fail_edit_text:
+            raise TelegramBadRequest(method=None, message="there is no text in the message to edit")
         self.edits.append((text, kwargs))
+
+    async def delete(self):
+        self.deletes += 1
 
     async def answer_photo(self, photo, **kwargs):
         self.answers.append((photo, kwargs))
@@ -305,6 +313,19 @@ def test_static_pool_has_at_least_30_sfw_items():
     )
 
 
+def test_random_save_answers_saved_notification(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1")])])
+    monkeypatch.setattr(random_handler, "random_art_service", service)
+    asyncio.run(service.next_artwork(42))
+    call = FakeCallback("random:save")
+
+    asyncio.run(random_handler.random_save(call))
+
+    assert call.answers == [("Сохранено ⭐", {})]
+    assert call.message.answers == []
+    assert call.message.edits == []
+
+
 def test_favorite_duplicate_prevention(monkeypatch):
     service = RandomArtService([SequenceProvider([_art("1")])])
     monkeypatch.setattr(random_handler, "random_art_service", service)
@@ -314,7 +335,9 @@ def test_favorite_duplicate_prevention(monkeypatch):
     asyncio.run(random_handler.random_save(call))
     asyncio.run(random_handler.random_save(call))
 
-    assert call.answers == [(None, {}), ("Этот арт уже сохранён ⭐", {})]
+    assert call.answers == [("Сохранено ⭐", {}), ("Уже в избранном ⭐", {})]
+    assert call.message.answers == []
+    assert call.message.edits == []
     assert len(service.gallery(42).favorites) == 1
 
 
@@ -347,6 +370,18 @@ def test_return_to_main_menu_from_random():
     asyncio.run(random_handler.random_main_menu(call))
 
     assert call.message.edits[0][0] == MAIN_MENU_TEXT
+    assert call.message.edits[0][1]["reply_markup"] == main_menu_keyboard()
+
+
+def test_return_to_main_menu_from_random_media_message():
+    call = FakeCallback("random:main")
+    call.message.fail_edit_text = True
+
+    asyncio.run(random_handler.random_main_menu(call))
+
+    assert call.message.deletes == 1
+    assert call.message.answers == [(MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})]
+    assert call.answers == [(None, {})]
 
 
 def test_random_keyboards_have_expected_buttons():
