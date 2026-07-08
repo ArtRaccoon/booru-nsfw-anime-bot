@@ -11,7 +11,8 @@ RANDOM_TITLE = "🦝 Енот Ищейка"
 NO_UNIQUE_ART_TEXT = "Пока не нашла новый арт. Попробуйте ещё раз."
 INITIAL_EMPTY_ART_TEXT = "Пока не удалось найти арт. Попробуйте позже."
 FIRST_ART_TEXT = "Это первый просмотренный арт."
-ALREADY_SAVED_TEXT = "Этот арт уже сохранён ⭐"
+SAVE_SUCCESS_NOTIFICATION_TEXT = "Сохранено ⭐"
+SAVE_DUPLICATE_NOTIFICATION_TEXT = "Уже в избранном ⭐"
 
 
 @dataclass(frozen=True)
