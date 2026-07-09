@@ -44,8 +44,22 @@ def search_prompt_keyboard() -> InlineKeyboardMarkup:
 def search_results_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
-            [InlineKeyboardButton(text="🎲 Рандомный арт", callback_data="menu:random")],
-            [InlineKeyboardButton(text="🔎 Новый поиск", callback_data="menu:search")],
+            [
+                InlineKeyboardButton(text="⬅️ Назад", callback_data="search:previous"),
+                InlineKeyboardButton(text="⭐ Сохранить", callback_data="search:save"),
+                InlineKeyboardButton(text="➡️ Вперёд", callback_data="search:next"),
+            ],
+            [InlineKeyboardButton(text="🏷 Показать теги", callback_data="search:tags")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="search:main")],
+        ]
+    )
+
+
+def search_tags_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⭐ Сохранить", callback_data="search:save")],
+            [InlineKeyboardButton(text="🖼 Вернуться к арту", callback_data="search:artwork")],
             [InlineKeyboardButton(text="🏠 Главное меню", callback_data="search:main")],
         ]
     )
