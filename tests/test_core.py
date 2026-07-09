@@ -13,10 +13,17 @@ from app.handlers import random_art as random_handler
 from app.handlers.start import (
     MAIN_MENU_TEXT,
     MENU_PREMIUM_TEXT,
-    MENU_SEARCH_TEXT,
+    SEARCH_HINT_TEXT,
+    SEARCH_PROMPT_TEXT,
     START_TEXT,
+    format_search_preview_text,
     main_menu_stub,
+    parse_search_tags,
+    search_main_menu,
+    search_open,
     search_start,
+    search_text_received,
+    search_user_states,
     start,
 )
 from app.keyboards import (
@@ -27,6 +34,8 @@ from app.keyboards import (
     random_art_keyboard,
     random_tags_keyboard,
     search_keyboard,
+    search_prompt_keyboard,
+    search_results_keyboard,
 )
 from app.random_art import (
     DEFAULT_PROVIDERS,
@@ -157,7 +166,6 @@ def test_main_menu_contains_exactly_four_expected_buttons():
 @pytest.mark.parametrize(
     ("callback_data", "expected_text"),
     [
-        ("menu:search", MENU_SEARCH_TEXT),
         ("menu:premium", MENU_PREMIUM_TEXT),
     ],
 )
@@ -167,6 +175,86 @@ def test_main_menu_stub_callbacks_answer(callback_data, expected_text):
     asyncio.run(main_menu_stub(call))
 
     assert call.answers == [(expected_text, {})]
+
+
+def test_menu_search_opens_search_prompt():
+    search_user_states.clear()
+    call = FakeCallback("menu:search")
+
+    asyncio.run(search_open(call))
+
+    assert call.message.edits[0][0] == SEARCH_PROMPT_TEXT
+    assert call.message.edits[0][1]["reply_markup"] == search_prompt_keyboard()
+    assert search_user_states[42] == "waiting_for_search_tags"
+    assert call.answers == [(None, {})]
+
+
+def test_search_prompt_has_main_menu_button():
+    buttons = _buttons(search_prompt_keyboard())
+
+    assert [(button.text, button.callback_data) for button in buttons] == [
+        ("🏠 Главное меню", "search:main")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("raw_text", "expected_tags"),
+    [
+        ("landscape, sunset, long hair", ["landscape", "sunset", "long_hair"]),
+        ("TAG1, Tag Two", ["tag1", "tag_two"]),
+        ("tag1, , tag2,,  ", ["tag1", "tag2"]),
+    ],
+)
+def test_parse_search_tags(raw_text, expected_tags):
+    assert parse_search_tags(raw_text) == expected_tags
+
+
+def test_search_text_shows_parsed_tags_preview_and_clears_state():
+    search_user_states.clear()
+    search_user_states[42] = "waiting_for_search_tags"
+    message = FakeMessage()
+    message.text = "landscape, sunset, long hair"
+
+    asyncio.run(search_text_received(message))
+
+    tags = ["landscape", "sunset", "long_hair"]
+    assert message.answers == [
+        (format_search_preview_text(tags), {"reply_markup": search_results_keyboard()})
+    ]
+    assert 42 not in search_user_states
+
+
+def test_search_results_keyboard_has_expected_buttons():
+    buttons = _buttons(search_results_keyboard())
+
+    assert [(button.text, button.callback_data) for button in buttons] == [
+        ("🎲 Рандомный арт", "menu:random"),
+        ("🔎 Новый поиск", "menu:search"),
+        ("🏠 Главное меню", "search:main"),
+    ]
+
+
+def test_search_main_returns_to_main_menu():
+    search_user_states.clear()
+    search_user_states[42] = "waiting_for_search_tags"
+    call = FakeCallback("search:main")
+
+    asyncio.run(search_main_menu(call))
+
+    assert call.message.edits[0][0] == MAIN_MENU_TEXT
+    assert call.message.edits[0][1]["reply_markup"] == main_menu_keyboard()
+    assert 42 not in search_user_states
+    assert call.answers == [(None, {})]
+
+
+def test_text_without_search_state_does_not_crash():
+    search_user_states.clear()
+    message = FakeMessage()
+    message.text = "landscape"
+
+    asyncio.run(search_text_received(message))
+
+    assert message.answers == [(SEARCH_HINT_TEXT, {})]
 
 
 class SequenceProvider(StaticArtworkProvider):

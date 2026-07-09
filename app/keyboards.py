@@ -22,6 +22,24 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def search_prompt_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="search:main")]
+        ]
+    )
+
+
+def search_results_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="🎲 Рандомный арт", callback_data="menu:random")],
+            [InlineKeyboardButton(text="🔎 Новый поиск", callback_data="menu:search")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="search:main")],
+        ]
+    )
+
+
 def random_empty_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
