@@ -9,6 +9,7 @@ from aiogram.client.session.aiohttp import AiohttpSession
 
 from app.config import Settings, get_settings
 from app.handlers.favorites import router as favorites_router
+from app.handlers.random_art import random_art_service
 from app.handlers.random_art import router as random_art_router
 from app.handlers.start import router as start_router
 
@@ -45,6 +46,8 @@ async def main() -> None:
     settings = get_settings()
     if not settings.bot_token:
         raise RuntimeError("BOT_TOKEN is required to start Telegram polling")
+
+    random_art_service.start_preload()
 
     bot = create_bot(settings)
     try:

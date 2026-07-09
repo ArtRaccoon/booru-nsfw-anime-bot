@@ -178,3 +178,44 @@ def test_provider_failure_returns_empty_list():
     provider = BooruProvider(config(base_url="https://127.0.0.1:1"))
 
     assert asyncio.run(provider.search(["tag"])) == []
+
+
+def test_safe_filters_added_per_engine():
+    assert (
+        BooruProvider(config(engine="danbooru"))._params(
+            ["long_hair"], mode="sfw", limit=10, page=0
+        )["tags"]
+        == "long_hair rating:safe"
+    )
+    assert (
+        BooruProvider(config(engine="moebooru"))._params(
+            ["long_hair"], mode="sfw", limit=10, page=0
+        )["tags"]
+        == "long_hair rating:safe"
+    )
+    assert (
+        BooruProvider(config(engine="gelbooru_02"))._params(
+            ["long_hair"], mode="sfw", limit=10, page=0
+        )["tags"]
+        == "long_hair rating:safe"
+    )
+    assert (
+        BooruProvider(config(engine="e621"))._params(["long_hair"], mode="sfw", limit=10, page=0)[
+            "tags"
+        ]
+        == "long_hair rating:s"
+    )
+    assert (
+        "explicit"
+        in BooruProvider(config(engine="philomena"))._params(
+            ["long_hair"], mode="sfw", limit=10, page=0
+        )["q"]
+    )
+
+
+def test_search_params_do_not_force_random_order():
+    params = BooruProvider(config(engine="danbooru"))._params(
+        ["sunset"], mode="sfw", limit=10, page=0
+    )
+
+    assert params == {"tags": "sunset rating:safe", "limit": 10}
