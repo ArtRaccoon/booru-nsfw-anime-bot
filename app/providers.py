@@ -13,7 +13,7 @@ from app.random_art import Artwork
 
 LOGGER = logging.getLogger(__name__)
 KNOWN_ENGINES = {"danbooru", "moebooru", "gelbooru_02", "e621", "philomena", "nozomi"}
-DEFAULT_TIMEOUT = 8
+DEFAULT_TIMEOUT = 10
 USER_AGENT = "ArtRaccoonBooruBot/1.0"
 
 
@@ -58,7 +58,9 @@ class BooruProvider:
         try:
             async with httpx.AsyncClient(
                 proxy=get_settings().proxy_url,
-                timeout=self.config.timeout_seconds,
+                timeout=httpx.Timeout(
+                    self.config.timeout_seconds, connect=4, read=8, write=8, pool=4
+                ),
                 headers=headers,
                 follow_redirects=True,
             ) as client:
@@ -85,10 +87,11 @@ class BooruProvider:
         }[self.config.engine]
 
     def _params(self, tags: list[str], *, mode: str, limit: int, page: int) -> dict[str, Any]:
-        query_tags = safety_tags(self.config.engine, mode) + tags
+        clean_tags = [tag for tag in tags if tag]
+        query_tags = clean_tags + safety_tags(self.config.engine, mode)
         query = " ".join(dict.fromkeys(query_tags))
         if self.config.engine == "danbooru":
-            return {"tags": query, "limit": limit, "random": "true"}
+            return {"tags": query, "limit": limit}
         if self.config.engine == "moebooru":
             return {"tags": query, "limit": limit}
         if self.config.engine == "gelbooru_02":
@@ -104,7 +107,11 @@ class BooruProvider:
         if self.config.engine == "e621":
             return {"tags": query, "limit": limit}
         if self.config.engine == "philomena":
-            return {"q": query, "per_page": limit, "page": max(1, page + 1)}
+            return {
+                "q": ", ".join(dict.fromkeys(query_tags)),
+                "per_page": limit,
+                "page": max(1, page + 1),
+            }
         return {}
 
     def normalize(self, data: Any) -> list[Artwork]:

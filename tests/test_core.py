@@ -760,3 +760,64 @@ def test_favorites_user_text_excludes_provider_source_and_rating(monkeypatch):
         "seq" not in text and "safe" not in text and "example.test" not in text
         for text in user_texts
     )
+
+
+def test_search_cache_key_normalizes_tags():
+    from app.random_art import search_cache_key
+
+    assert search_cache_key(["long hair", " Sunset "]) == "long_hair,sunset"
+
+
+def test_search_cache_expires_by_ttl():
+    from app.random_art import ProviderCacheService
+
+    now = 1000.0
+    cache = ProviderCacheService(time_func=lambda: now)
+    cache.put_search(["long hair"], [_art("cached")])
+    assert cache.get_search(["long_hair"])[0].post_id == "cached"
+    now += 1801
+    assert cache.get_search(["long_hair"]) is None
+
+
+def test_random_uses_cache_before_live_provider():
+    provider = SequenceProvider([_art("live")])
+    service = RandomArtService([provider])
+    service.cache.random_sfw_pool.append(_art("cached"))
+
+    artwork = asyncio.run(service.next_artwork(42))
+
+    assert artwork.post_id == "cached"
+    assert provider._queue[0].post_id == "live"
+
+
+def test_cache_refill_triggers_below_threshold():
+    class SearchAllProvider(SequenceProvider):
+        async def search(self, tags, *, mode="sfw", limit=20, page=0):
+            return self._artworks[:limit]
+
+    service = RandomArtService([SearchAllProvider([_art("live")])])
+
+    async def run():
+        service.cache.maybe_trigger_refill(service.sfw_providers())
+        await service.cache._refill_task
+
+    asyncio.run(run())
+
+    assert service.cache.random_sfw_pool
+
+
+def test_provider_failure_sets_cooldown_and_skips():
+    from app.random_art import ProviderCacheService
+
+    cache = ProviderCacheService(time_func=lambda: 10.0)
+    cache.set_cooldown("provider")
+
+    assert cache.is_on_cooldown("provider") is True
+
+
+def test_search_next_uses_cached_results_before_live_fetch():
+    service = RandomArtService([SequenceProvider([_art("live", ("sunset",))])])
+    service.cache.put_search(["sunset"], [_art("cached", ("sunset",))])
+
+    assert asyncio.run(service.start_search(42, ["sunset"])).post_id == "cached"
+    assert service.providers[0]._queue[0].post_id == "live"
