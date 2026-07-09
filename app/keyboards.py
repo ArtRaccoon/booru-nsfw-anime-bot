@@ -22,6 +22,17 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def premium_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(text="⭐ 1 день", callback_data="premium:day")],
+            [InlineKeyboardButton(text="⭐ 7 дней", callback_data="premium:week")],
+            [InlineKeyboardButton(text="⭐ 30 дней", callback_data="premium:month")],
+            [InlineKeyboardButton(text="🏠 Главное меню", callback_data="premium:main")],
+        ]
+    )
+
+
 def search_prompt_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
