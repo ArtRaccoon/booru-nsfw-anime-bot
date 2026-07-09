@@ -19,7 +19,6 @@ from app.handlers.start import (
     SEARCH_HINT_TEXT,
     SEARCH_PROMPT_TEXT,
     START_TEXT,
-    format_search_preview_text,
     main_menu_stub,
     parse_search_tags,
     premium_main_menu,
@@ -341,18 +340,21 @@ def test_parse_search_tags(raw_text, expected_tags):
     assert parse_search_tags(raw_text) == expected_tags
 
 
-def test_search_text_shows_parsed_tags_preview_and_clears_state():
+def test_search_text_shows_parsed_tags_preview_and_clears_state(monkeypatch):
     search_user_states.clear()
     search_user_states[42] = "waiting_for_search_tags"
+    service = RandomArtService(
+        [SequenceProvider([_art("search-1", ("landscape", "sunset", "long_hair"))])]
+    )
+    monkeypatch.setattr("app.handlers.start.random_art_service", service)
     message = FakeMessage()
     message.text = "landscape, sunset, long hair"
 
     asyncio.run(search_text_received(message))
 
-    tags = ["landscape", "sunset", "long_hair"]
-    assert message.answers == [
-        (format_search_preview_text(tags), {"reply_markup": search_results_keyboard()})
-    ]
+    assert message.answers[0][0] == "https://example.test/search-1.jpg"
+    assert message.answers[0][1]["caption"] == random_handler.RANDOM_TITLE
+    assert message.answers[0][1]["reply_markup"] == search_results_keyboard()
     assert 42 not in search_user_states
 
 
@@ -360,8 +362,10 @@ def test_search_results_keyboard_has_expected_buttons():
     buttons = _buttons(search_results_keyboard())
 
     assert [(button.text, button.callback_data) for button in buttons] == [
-        ("🎲 Рандомный арт", "menu:random"),
-        ("🔎 Новый поиск", "menu:search"),
+        ("⬅️ Назад", "search:previous"),
+        ("⭐ Сохранить", "search:save"),
+        ("➡️ Вперёд", "search:next"),
+        ("🏷 Показать теги", "search:tags"),
         ("🏠 Главное меню", "search:main"),
     ]
 

@@ -1,0 +1,244 @@
+providers:
+  - id: safebooru_danbooru
+    name: Safebooru Danbooru
+    engine: danbooru
+    base_url: https://safebooru.donmai.us
+    enabled: true
+    sfw: true
+    nsfw: false
+    premium_only: false
+    priority: 100
+  - id: safebooru_org
+    name: Safebooru
+    engine: gelbooru_02
+    base_url: https://safebooru.org
+    enabled: true
+    sfw: true
+    nsfw: false
+    premium_only: false
+    priority: 95
+  - id: sakugabooru
+    name: Sakugabooru
+    engine: moebooru
+    base_url: https://sakugabooru.com
+    enabled: true
+    sfw: true
+    nsfw: false
+    premium_only: false
+    priority: 90
+  - id: aibooru
+    name: AIBooru
+    engine: danbooru
+    base_url: https://aibooru.online
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 85
+  - id: yandere
+    name: yande.re
+    engine: moebooru
+    base_url: https://yande.re
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 90
+  - id: konachan
+    name: Konachan
+    engine: moebooru
+    base_url: https://konachan.com
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 80
+  - id: behoimi
+    name: Behoimi
+    engine: moebooru
+    base_url: https://behoimi.org
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 65
+  - id: gelbooru
+    name: Gelbooru
+    engine: gelbooru_02
+    base_url: https://gelbooru.com
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 90
+  - id: tbib
+    name: The Big ImageBoard
+    engine: gelbooru_02
+    base_url: https://tbib.org
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 75
+  - id: realbooru
+    name: Realbooru
+    engine: gelbooru_02
+    base_url: https://realbooru.com
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 50
+  - id: idolcomplex
+    name: Idol Complex
+    engine: gelbooru_02
+    base_url: https://idolcomplex.com
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 50
+  - id: agnph
+    name: AGNPH
+    engine: gelbooru_02
+    base_url: https://agn.ph
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 45
+  - id: sizebooru
+    name: Size Booru
+    engine: gelbooru_02
+    base_url: https://sizebooru.com
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 35
+  - id: e621
+    name: e621
+    engine: e621
+    base_url: https://e621.net
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 70
+  - id: e926
+    name: e926
+    engine: e621
+    base_url: https://e926.net
+    enabled: true
+    sfw: true
+    nsfw: false
+    premium_only: false
+    priority: 70
+  - id: e6ai
+    name: e6AI
+    engine: e621
+    base_url: https://e6ai.net
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 50
+  - id: derpibooru
+    name: Derpibooru
+    engine: philomena
+    base_url: https://derpibooru.org
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 60
+  - id: ponybooru
+    name: Ponybooru
+    engine: philomena
+    base_url: https://ponybooru.org
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 50
+  - id: furbooru
+    name: Furbooru
+    engine: philomena
+    base_url: https://furbooru.org
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 50
+  - id: twibooru
+    name: Twibooru
+    engine: philomena
+    base_url: https://twibooru.org
+    enabled: true
+    sfw: true
+    nsfw: true
+    premium_only: false
+    priority: 50
+  - id: rule34_xxx
+    name: Rule34.xxx
+    engine: gelbooru_02
+    base_url: https://rule34.xxx
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 90
+  - id: rule34_us
+    name: Rule34.us
+    engine: gelbooru_02
+    base_url: https://rule34.us
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 60
+  - id: rule34_world
+    name: Rule34 World
+    engine: gelbooru_02
+    base_url: https://rule34.world
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 55
+  - id: xbooru
+    name: Xbooru
+    engine: gelbooru_02
+    base_url: https://xbooru.com
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 60
+  - id: hypnohub
+    name: Hypnohub
+    engine: gelbooru_02
+    base_url: https://hypnohub.net
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 50
+  - id: yiffverse
+    name: Yiffverse
+    engine: gelbooru_02
+    base_url: https://yiffverse.com
+    enabled: true
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 45
+  - id: nozomi
+    name: Nozomi.la
+    engine: nozomi
+    base_url: https://nozomi.la
+    enabled: false
+    sfw: false
+    nsfw: true
+    premium_only: true
+    priority: 65

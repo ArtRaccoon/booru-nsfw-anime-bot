@@ -5,14 +5,16 @@ import logging
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, Message, PreCheckoutQuery
+from aiogram.types import CallbackQuery, InputMediaPhoto, Message, PreCheckoutQuery
 
+from app.handlers.random_art import random_art_service
 from app.keyboards import (
     main_menu_keyboard,
     premium_keyboard,
     search_keyboard,
     search_prompt_keyboard,
     search_results_keyboard,
+    search_tags_keyboard,
 )
 from app.premium import (
     PREMIUM_PLANS,
@@ -20,6 +22,14 @@ from app.premium import (
     activate_pending_premium,
     premium_payload,
     store_pending_premium_plan,
+)
+from app.random_art import (
+    FIRST_ART_TEXT,
+    NO_UNIQUE_ART_TEXT,
+    RANDOM_TITLE,
+    SAVE_DUPLICATE_NOTIFICATION_TEXT,
+    SAVE_SUCCESS_NOTIFICATION_TEXT,
+    format_tags_text,
 )
 
 router = Router()
@@ -74,12 +84,7 @@ def parse_search_tags(text: str) -> list[str]:
 
 
 def format_search_preview_text(tags: list[str]) -> str:
-    return (
-        "🦝 Енот Ищейка\n\n"
-        "Я поняла след:\n\n"
-        f"{', '.join(tags)}\n\n"
-        "Поиск по тегам добавим следующим этапом."
-    )
+    return "🦝 Енот Ищейка\n\n" + ", ".join(tags)
 
 
 async def _show_main_menu(call: CallbackQuery) -> None:
@@ -131,7 +136,99 @@ async def search_text_received(message: Message) -> None:
     search_user_states.pop(user_id, None)
     logging.info("search state cleared (%s)", user_id)
 
-    await message.answer(format_search_preview_text(tags), reply_markup=search_results_keyboard())
+    artwork = await random_art_service.start_search(user_id, tags)
+    if artwork is None:
+        await message.answer("Не нашла арт по этим тегам. Попробуй другие.")
+        return
+    await message.answer_photo(
+        artwork.file_url, caption=RANDOM_TITLE, reply_markup=search_results_keyboard()
+    )
+
+
+async def _show_search_artwork(call: CallbackQuery, *, send_new: bool = False) -> None:
+    user_id = _user_id(call)
+    session = random_art_service.search_gallery(user_id) if user_id is not None else None
+    artwork = session.current if session else None
+    if artwork is None:
+        await call.answer(NO_UNIQUE_ART_TEXT)
+        return
+    if send_new and call.message:
+        await call.message.answer_photo(
+            artwork.file_url, caption=RANDOM_TITLE, reply_markup=search_results_keyboard()
+        )
+    elif call.message:
+        await call.message.edit_media(
+            InputMediaPhoto(media=artwork.file_url, caption=RANDOM_TITLE),
+            reply_markup=search_results_keyboard(),
+        )
+    await call.answer()
+
+
+@router.callback_query(F.data == "search:next")
+async def search_next(call: CallbackQuery) -> None:
+    user_id = _user_id(call)
+    if user_id is None:
+        await call.answer()
+        return
+    artwork = random_art_service.next_search_from_history(user_id)
+    if artwork is None:
+        artwork = await random_art_service.next_search_artwork(user_id)
+    if artwork is None:
+        await call.answer(NO_UNIQUE_ART_TEXT)
+        return
+    await _show_search_artwork(call)
+
+
+@router.callback_query(F.data == "search:previous")
+async def search_previous(call: CallbackQuery) -> None:
+    user_id = _user_id(call)
+    if user_id is None:
+        await call.answer()
+        return
+    if random_art_service.previous_search_artwork(user_id) is None:
+        await call.answer(FIRST_ART_TEXT)
+        return
+    await _show_search_artwork(call)
+
+
+@router.callback_query(F.data == "search:tags")
+async def search_tags(call: CallbackQuery) -> None:
+    user_id = _user_id(call)
+    session = random_art_service.search_gallery(user_id) if user_id is not None else None
+    artwork = session.current if session else None
+    if artwork is None:
+        await call.answer(NO_UNIQUE_ART_TEXT)
+        return
+    if call.message:
+        await call.message.edit_caption(
+            caption=format_tags_text(artwork),
+            parse_mode="HTML",
+            reply_markup=search_tags_keyboard(),
+        )
+    await call.answer()
+
+
+@router.callback_query(F.data == "search:artwork")
+async def search_artwork(call: CallbackQuery) -> None:
+    await _show_search_artwork(call)
+
+
+@router.callback_query(F.data == "search:save")
+async def search_save(call: CallbackQuery) -> None:
+    user_id = _user_id(call)
+    session = random_art_service.search_gallery(user_id) if user_id is not None else None
+    artwork = session.current if session else None
+    if user_id is None or artwork is None:
+        await call.answer(NO_UNIQUE_ART_TEXT)
+        return
+    gallery = random_art_service.gallery(user_id)
+    if artwork.unique_key not in {art.unique_key for art in gallery.history}:
+        gallery.history.append(artwork)
+        gallery.current_index = len(gallery.history) - 1
+    if random_art_service.save_current(user_id):
+        await call.answer(SAVE_SUCCESS_NOTIFICATION_TEXT)
+    else:
+        await call.answer(SAVE_DUPLICATE_NOTIFICATION_TEXT)
 
 
 @router.callback_query(F.data == "search:main")
