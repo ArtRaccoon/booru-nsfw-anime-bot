@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from aiogram.client.session.aiohttp import AiohttpSession
@@ -13,12 +14,18 @@ from app.handlers import random_art as random_handler
 from app.handlers.start import (
     MAIN_MENU_TEXT,
     MENU_PREMIUM_TEXT,
+    PREMIUM_ACTIVATED_TEXT,
+    PREMIUM_TEXT,
     SEARCH_HINT_TEXT,
     SEARCH_PROMPT_TEXT,
     START_TEXT,
     format_search_preview_text,
     main_menu_stub,
     parse_search_tags,
+    premium_main_menu,
+    premium_open,
+    premium_plan_selected,
+    premium_successful_payment,
     search_main_menu,
     search_open,
     search_start,
@@ -31,11 +38,20 @@ from app.keyboards import (
     favorites_empty_keyboard,
     favorites_tags_keyboard,
     main_menu_keyboard,
+    premium_keyboard,
     random_art_keyboard,
     random_tags_keyboard,
     search_keyboard,
     search_prompt_keyboard,
     search_results_keyboard,
+)
+from app.premium import (
+    PREMIUM_PLANS,
+    PremiumState,
+    TelegramStarsInvoiceService,
+    is_premium_active,
+    pending_premium_plans,
+    premium_states,
 )
 from app.random_art import (
     DEFAULT_PROVIDERS,
@@ -115,6 +131,7 @@ class FakeCallback:
         self.data = data
         self.answers = []
         self.message = FakeMessage()
+        self.bot = object()
 
     async def answer(self, text=None, **kwargs):
         self.answers.append((text, kwargs))
@@ -163,18 +180,133 @@ def test_main_menu_contains_exactly_four_expected_buttons():
     ]
 
 
-@pytest.mark.parametrize(
-    ("callback_data", "expected_text"),
-    [
-        ("menu:premium", MENU_PREMIUM_TEXT),
-    ],
-)
-def test_main_menu_stub_callbacks_answer(callback_data, expected_text):
-    call = FakeCallback(callback_data)
+def test_premium_menu_opens():
+    call = FakeCallback("menu:premium")
+
+    asyncio.run(premium_open(call))
+
+    assert call.message.edits[0][0] == PREMIUM_TEXT
+    assert call.message.edits[0][1]["reply_markup"] == premium_keyboard()
+    assert call.answers == [(None, {})]
+
+
+def test_main_menu_stub_compat_opens_premium_menu():
+    call = FakeCallback("menu:premium")
 
     asyncio.run(main_menu_stub(call))
 
-    assert call.answers == [(expected_text, {})]
+    assert call.message.edits[0][0] == MENU_PREMIUM_TEXT
+
+
+def test_premium_buttons_exist():
+    buttons = _buttons(premium_keyboard())
+
+    assert [(button.text, button.callback_data) for button in buttons] == [
+        ("⭐ 1 день", "premium:day"),
+        ("⭐ 7 дней", "premium:week"),
+        ("⭐ 30 дней", "premium:month"),
+        ("🏠 Главное меню", "premium:main"),
+    ]
+
+
+def test_premium_main_menu_returns():
+    call = FakeCallback("premium:main")
+
+    asyncio.run(premium_main_menu(call))
+
+    assert call.message.edits[0][0] == MAIN_MENU_TEXT
+    assert call.message.edits[0][1]["reply_markup"] == main_menu_keyboard()
+    assert call.answers == [(None, {})]
+
+
+class FakePremiumInvoiceService:
+    def __init__(self):
+        self.calls = []
+
+    async def create_invoice(self, bot, user_id, plan, payload):
+        self.calls.append((bot, user_id, plan, payload))
+
+
+class FakeSuccessfulPayment:
+    def __init__(self, invoice_payload):
+        self.invoice_payload = invoice_payload
+
+
+def test_premium_invoice_creation_called_with_xtr_plan(monkeypatch):
+    pending_premium_plans.clear()
+    service = FakePremiumInvoiceService()
+    from app.handlers import start as start_handler
+
+    monkeypatch.setattr(start_handler, "premium_invoice_service", service)
+    call = FakeCallback("premium:day")
+
+    asyncio.run(premium_plan_selected(call))
+
+    assert len(service.calls) == 1
+    _, user_id, plan, payload = service.calls[0]
+    assert user_id == 42
+    assert plan.code == "day"
+    assert plan.stars == 50
+    assert pending_premium_plans[payload].plan == "day"
+
+
+class FakeInvoiceBot:
+    def __init__(self):
+        self.invoices = []
+
+    async def send_invoice(self, **kwargs):
+        self.invoices.append(kwargs)
+
+
+def test_telegram_stars_invoice_service_uses_xtr_currency():
+    bot = FakeInvoiceBot()
+    service = TelegramStarsInvoiceService()
+
+    asyncio.run(service.create_invoice(bot, 42, PREMIUM_PLANS["month"], "payload"))
+
+    assert bot.invoices[0]["currency"] == "XTR"
+    assert bot.invoices[0]["prices"][0].amount == 700
+
+
+def test_successful_payment_activates_premium():
+    pending_premium_plans.clear()
+    premium_states.clear()
+    payload = "premium:42:week:test"
+    pending_premium_plans[payload] = __import__(
+        "app.premium", fromlist=["PendingPremiumPlan"]
+    ).PendingPremiumPlan(user_id=42, plan="week", created_at=datetime.now(UTC))
+    message = FakeMessage()
+    message.successful_payment = FakeSuccessfulPayment(payload)
+
+    asyncio.run(premium_successful_payment(message))
+
+    assert premium_states[42].plan == "week"
+    assert premium_states[42].premium_until > datetime.now(UTC) + timedelta(days=6)
+    assert message.answers == [(PREMIUM_ACTIVATED_TEXT, {})]
+
+
+def test_expired_premium_returns_false():
+    premium_states.clear()
+    premium_states[42] = PremiumState(
+        user_id=42,
+        premium_until=datetime.now(UTC) - timedelta(seconds=1),
+        plan="day",
+        created_at=datetime.now(UTC) - timedelta(days=1),
+    )
+
+    assert is_premium_active(42) is False
+
+
+def test_active_premium_returns_true():
+    premium_states.clear()
+    premium_states[42] = PremiumState(
+        user_id=42,
+        premium_until=datetime.now(UTC) + timedelta(seconds=60),
+        plan="day",
+        created_at=datetime.now(UTC),
+    )
+
+    assert is_premium_active(42) is True
 
 
 def test_menu_search_opens_search_prompt():

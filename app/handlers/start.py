@@ -5,13 +5,21 @@ import logging
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, Message
+from aiogram.types import CallbackQuery, Message, PreCheckoutQuery
 
 from app.keyboards import (
     main_menu_keyboard,
+    premium_keyboard,
     search_keyboard,
     search_prompt_keyboard,
     search_results_keyboard,
+)
+from app.premium import (
+    PREMIUM_PLANS,
+    TelegramStarsInvoiceService,
+    activate_pending_premium,
+    premium_payload,
+    store_pending_premium_plan,
 )
 
 router = Router()
@@ -36,11 +44,18 @@ SEARCH_PROMPT_TEXT = (
 SEARCH_WAITING_STATE = "waiting_for_search_tags"
 SEARCH_HINT_TEXT = "Открой поиск через меню, и я пойму, что искать."
 MENU_RANDOM_TEXT = "🎲 Рандомный арт добавим следующим этапом."
-MENU_PREMIUM_TEXT = "💎 Премиум-раздел пока закрыт на маленький енотовый замочек."
+PREMIUM_TEXT = (
+    "🦝 Енот Ищейка Premium\n\n"
+    "Премиум открывает взрослый режим поиска:\n\n"
+    "🔞 NSFW поиск по тегам\n"
+    "🎲 NSFW случайные арты\n"
+    "🏷 больше возможностей для фильтрации\n\n"
+    "Выбери срок доступа:"
+)
+PREMIUM_ACTIVATED_TEXT = "Премиум активирован 💎"
+MENU_PREMIUM_TEXT = PREMIUM_TEXT
 
-MENU_STUBS = {
-    "menu:premium": MENU_PREMIUM_TEXT,
-}
+premium_invoice_service = TelegramStarsInvoiceService()
 
 search_user_states: dict[int, str] = {}
 
@@ -129,7 +144,51 @@ async def search_main_menu(call: CallbackQuery) -> None:
     await call.answer()
 
 
-@router.callback_query(F.data.in_(MENU_STUBS))
+@router.callback_query(F.data == "menu:premium")
+async def premium_open(call: CallbackQuery) -> None:
+    logging.info("premium opened (%s)", _user_id(call))
+    if call.message:
+        await call.message.edit_text(PREMIUM_TEXT, reply_markup=premium_keyboard())
+    await call.answer()
+
+
+@router.callback_query(F.data == "premium:main")
+async def premium_main_menu(call: CallbackQuery) -> None:
+    await _show_main_menu(call)
+    logging.info("premium returned to main menu (%s)", _user_id(call))
+    await call.answer()
+
+
+@router.callback_query(F.data.in_({"premium:day", "premium:week", "premium:month"}))
+async def premium_plan_selected(call: CallbackQuery) -> None:
+    user_id = _user_id(call)
+    if user_id is None or call.data is None:
+        await call.answer()
+        return
+
+    plan_code = call.data.split(":", 1)[1]
+    plan = PREMIUM_PLANS[plan_code]
+    payload = premium_payload(user_id, plan_code)
+    store_pending_premium_plan(user_id, plan_code, payload)
+    await premium_invoice_service.create_invoice(call.bot, user_id, plan, payload)
+    logging.info("premium invoice created (%s): %s", user_id, plan_code)
+    await call.answer()
+
+
+@router.pre_checkout_query()
+async def premium_pre_checkout(pre_checkout_query: PreCheckoutQuery) -> None:
+    await pre_checkout_query.answer(ok=True)
+
+
+@router.message(F.successful_payment)
+async def premium_successful_payment(message: Message) -> None:
+    user_id = _user_id(message)
+    if user_id is None or message.successful_payment is None:
+        return
+    activate_pending_premium(message.successful_payment.invoice_payload, user_id)
+    logging.info("premium activated (%s)", user_id)
+    await message.answer(PREMIUM_ACTIVATED_TEXT)
+
+
 async def main_menu_stub(call: CallbackQuery) -> None:
-    logging.info("%s clicked (%s)", call.data, _user_id(call))
-    await call.answer(MENU_STUBS[call.data])
+    await premium_open(call)
