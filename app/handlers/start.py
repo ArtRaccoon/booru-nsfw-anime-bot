@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from contextlib import suppress
 
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
@@ -16,6 +17,7 @@ from app.keyboards import (
     search_results_keyboard,
     search_tags_keyboard,
 )
+from app.loading import show_loading, show_message_loading
 from app.premium import (
     PREMIUM_PLANS,
     TelegramStarsInvoiceService,
@@ -70,6 +72,13 @@ premium_invoice_service = TelegramStarsInvoiceService()
 search_user_states: dict[int, str] = {}
 
 
+def clear_transient_user_state(user_id: int | None) -> None:
+    if user_id is None:
+        return
+    search_user_states.pop(user_id, None)
+    logging.info("transient state cleared (%s)", user_id)
+
+
 def _user_id(event: Message | CallbackQuery) -> int | None:
     return event.from_user.id if event.from_user else None
 
@@ -87,25 +96,46 @@ def format_search_preview_text(tags: list[str]) -> str:
     return "🦝 Енот Ищейка\n\n" + ", ".join(tags)
 
 
-async def _show_main_menu(call: CallbackQuery) -> None:
-    if call.message:
+async def render_main_menu(target: CallbackQuery | Message, user_id: int | None) -> None:
+    clear_transient_user_state(user_id)
+    message = target.message if hasattr(target, "message") else target
+    if message is None:
+        return
+    try:
+        await message.edit_text(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+    except TelegramBadRequest as error:
+        logging.info("main menu text edit failed (%s): %s", user_id, error)
         try:
-            await call.message.edit_text(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
-        except TelegramBadRequest:
-            await call.message.answer(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+            await message.edit_caption(
+                caption=MAIN_MENU_TEXT,
+                reply_markup=main_menu_keyboard(),
+            )
+            return
+        except TelegramBadRequest as caption_error:
+            logging.info("main menu caption edit failed (%s): %s", user_id, caption_error)
+        try:
+            await message.delete()
+        except TelegramBadRequest as delete_error:
+            logging.info("main menu stale message delete skipped (%s): %s", user_id, delete_error)
+        await message.answer(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+
+
+async def _show_main_menu(call: CallbackQuery) -> None:
+    await render_main_menu(call, _user_id(call))
 
 
 @router.message(CommandStart())
 async def start(message: Message) -> None:
-    logging.info("/start opened (%s)", _user_id(message))
+    user_id = _user_id(message)
+    clear_transient_user_state(user_id)
+    logging.info("/start opened (%s)", user_id)
     await message.answer(START_TEXT, reply_markup=search_keyboard())
 
 
 @router.callback_query(F.data == "search:start")
 async def search_start(call: CallbackQuery) -> None:
     logging.info("search:start clicked (%s)", _user_id(call))
-    if call.message:
-        await call.message.edit_text(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+    await render_main_menu(call, _user_id(call))
     logging.info("main menu opened (%s)", _user_id(call))
     await call.answer()
 
@@ -136,7 +166,11 @@ async def search_text_received(message: Message) -> None:
     search_user_states.pop(user_id, None)
     logging.info("search state cleared (%s)", user_id)
 
+    loading_message = await show_message_loading(message)
     artwork = await random_art_service.start_search(user_id, tags)
+    if loading_message is not None:
+        with suppress(TelegramBadRequest):
+            await loading_message.delete()
     if artwork is None:
         await message.answer("Не нашла арт по этим тегам. Попробуй другие.")
         return
@@ -176,6 +210,7 @@ async def search_next(call: CallbackQuery) -> None:
     if artwork is None:
         await call.answer(NO_UNIQUE_ART_TEXT)
         return
+    await show_loading(call)
     await _show_search_artwork(call)
 
 
@@ -188,6 +223,7 @@ async def search_previous(call: CallbackQuery) -> None:
     if random_art_service.previous_search_artwork(user_id) is None:
         await call.answer(FIRST_ART_TEXT)
         return
+    await show_loading(call)
     await _show_search_artwork(call)
 
 
@@ -210,6 +246,7 @@ async def search_tags(call: CallbackQuery) -> None:
 
 @router.callback_query(F.data == "search:artwork")
 async def search_artwork(call: CallbackQuery) -> None:
+    await show_loading(call)
     await _show_search_artwork(call)
 
 
@@ -234,8 +271,7 @@ async def search_save(call: CallbackQuery) -> None:
 @router.callback_query(F.data == "search:main")
 async def search_main_menu(call: CallbackQuery) -> None:
     user_id = _user_id(call)
-    if user_id is not None:
-        search_user_states.pop(user_id, None)
+    clear_transient_user_state(user_id)
     await _show_main_menu(call)
     logging.info("search returned to main menu (%s)", user_id)
     await call.answer()

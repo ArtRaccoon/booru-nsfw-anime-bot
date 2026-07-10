@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InputMediaPhoto
 
 from app.handlers.random_art import random_art_service
@@ -11,8 +10,8 @@ from app.keyboards import (
     favorites_art_keyboard,
     favorites_empty_keyboard,
     favorites_tags_keyboard,
-    main_menu_keyboard,
 )
+from app.loading import show_loading
 from app.random_art import RANDOM_TITLE, Artwork, format_tags_text
 
 router = Router()
@@ -76,6 +75,7 @@ async def favorites_open(call: CallbackQuery) -> None:
     if user_id is None:
         await call.answer()
         return
+    await show_loading(call)
     favorites_index[user_id] = 0
     favorites = _favorites(user_id)
     if not favorites:
@@ -107,6 +107,7 @@ async def favorites_next(call: CallbackQuery) -> None:
         return
     favorites_index[user_id] = index + 1
     logging.info("favorites next (%s)", user_id)
+    await show_loading(call)
     await _show_artwork(call)
     await call.answer()
 
@@ -125,6 +126,7 @@ async def favorites_previous(call: CallbackQuery) -> None:
         return
     favorites_index[user_id] = index - 1
     logging.info("favorites previous (%s)", user_id)
+    await show_loading(call)
     await _show_artwork(call)
     await call.answer()
 
@@ -174,20 +176,16 @@ async def favorites_tags(call: CallbackQuery) -> None:
 async def favorites_artwork(call: CallbackQuery) -> None:
     user_id = _user_id(call)
     logging.info("favorites returned to artwork (%s)", user_id)
+    await show_loading(call)
     await _show_artwork(call)
     await call.answer()
 
 
 @router.callback_query(F.data == "favorites:main")
 async def favorites_main(call: CallbackQuery) -> None:
-    from app.handlers.start import MAIN_MENU_TEXT
+    from app.handlers.start import render_main_menu
 
     user_id = _user_id(call)
     logging.info("favorites returned to main menu (%s)", user_id)
-    if call.message:
-        try:
-            await call.message.edit_text(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
-        except TelegramBadRequest:
-            await call.message.delete()
-            await call.message.answer(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+    await render_main_menu(call, user_id)
     await call.answer()
