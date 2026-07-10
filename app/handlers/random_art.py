@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InputMediaPhoto
 
 from app.keyboards import (
@@ -10,7 +11,7 @@ from app.keyboards import (
     random_empty_keyboard,
     random_tags_keyboard,
 )
-from app.loading import show_loading
+from app.loading import show_loading, show_loading_while
 from app.random_art import (
     FIRST_ART_TEXT,
     INITIAL_EMPTY_ART_TEXT,
@@ -42,13 +43,30 @@ async def _show_artwork(call: CallbackQuery, *, send_new: bool) -> None:
     if send_new:
         if call.message:
             await call.message.answer_photo(
-                artwork.file_url, caption=RANDOM_TITLE, reply_markup=random_art_keyboard()
+                artwork.file_url,
+                caption=RANDOM_TITLE,
+                reply_markup=random_art_keyboard(),
             )
     elif call.message:
-        await call.message.edit_media(
-            InputMediaPhoto(media=artwork.file_url, caption=RANDOM_TITLE),
-            reply_markup=random_art_keyboard(),
-        )
+        try:
+            await call.message.edit_media(
+                InputMediaPhoto(media=artwork.file_url, caption=RANDOM_TITLE),
+                reply_markup=random_art_keyboard(),
+            )
+        except (
+            TelegramBadRequest
+        ) as error:  # Telegram may reject editing media from older messages.
+            logging.info(
+                "artwork edit_media failed, sending replacement (%s): %s",
+                user_id,
+                error,
+            )
+            await call.message.delete()
+            await call.message.answer_photo(
+                artwork.file_url,
+                caption=RANDOM_TITLE,
+                reply_markup=random_art_keyboard(),
+            )
     await call.answer()
 
 
@@ -80,13 +98,17 @@ async def random_next(call: CallbackQuery) -> None:
     if user_id is None:
         await call.answer()
         return
-    artwork = random_art_service.next_from_history(user_id)
-    if artwork is None:
-        artwork = await random_art_service.next_artwork(user_id)
+
+    async def resolve_artwork():
+        artwork = random_art_service.next_from_history(user_id)
+        if artwork is None:
+            return await random_art_service.next_artwork(user_id)
+        return artwork
+
+    artwork = await show_loading_while(call, resolve_artwork())
     if artwork is None:
         await call.answer(NO_UNIQUE_ART_TEXT)
         return
-    await show_loading(call)
     await _show_artwork(call, send_new=False)
 
 
@@ -96,11 +118,14 @@ async def random_previous(call: CallbackQuery) -> None:
     if user_id is None:
         await call.answer()
         return
-    artwork = random_art_service.previous_artwork(user_id)
+
+    async def resolve_artwork():
+        return random_art_service.previous_artwork(user_id)
+
+    artwork = await show_loading_while(call, resolve_artwork())
     if artwork is None:
         await call.answer(FIRST_ART_TEXT)
         return
-    await show_loading(call)
     await _show_artwork(call, send_new=False)
 
 

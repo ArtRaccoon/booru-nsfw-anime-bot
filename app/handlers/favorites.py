@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InputMediaPhoto
 
 from app.handlers.random_art import random_art_service
@@ -11,7 +12,7 @@ from app.keyboards import (
     favorites_empty_keyboard,
     favorites_tags_keyboard,
 )
-from app.loading import show_loading
+from app.loading import show_loading, show_loading_while
 from app.random_art import RANDOM_TITLE, Artwork, format_tags_text
 
 router = Router()
@@ -48,7 +49,9 @@ def _clamp_index(user_id: int, favorites: list[Artwork]) -> int:
 
 async def _show_empty(call: CallbackQuery) -> None:
     if call.message:
-        await call.message.edit_text(EMPTY_FAVORITES_TEXT, reply_markup=favorites_empty_keyboard())
+        await call.message.edit_text(
+            EMPTY_FAVORITES_TEXT, reply_markup=favorites_empty_keyboard()
+        )
 
 
 async def _show_artwork(call: CallbackQuery) -> None:
@@ -61,10 +64,23 @@ async def _show_artwork(call: CallbackQuery) -> None:
         return
     artwork = favorites[_clamp_index(user_id, favorites)]
     if call.message:
-        await call.message.edit_media(
-            InputMediaPhoto(media=artwork.file_url, caption=RANDOM_TITLE),
-            reply_markup=favorites_art_keyboard(),
-        )
+        try:
+            await call.message.edit_media(
+                InputMediaPhoto(media=artwork.file_url, caption=RANDOM_TITLE),
+                reply_markup=favorites_art_keyboard(),
+            )
+        except TelegramBadRequest as error:
+            logging.info(
+                "favorites edit_media failed, sending replacement (%s): %s",
+                user_id,
+                error,
+            )
+            await call.message.delete()
+            await call.message.answer_photo(
+                artwork.file_url,
+                caption=RANDOM_TITLE,
+                reply_markup=favorites_art_keyboard(),
+            )
     logging.info("favorites shown (%s:%s, %s)", *artwork.unique_key, user_id)
 
 
@@ -87,7 +103,9 @@ async def favorites_open(call: CallbackQuery) -> None:
         await call.message.edit_text(RANDOM_TITLE)
         artwork = favorites[0]
         await call.message.answer_photo(
-            artwork.file_url, caption=RANDOM_TITLE, reply_markup=favorites_art_keyboard()
+            artwork.file_url,
+            caption=RANDOM_TITLE,
+            reply_markup=favorites_art_keyboard(),
         )
         logging.info("favorites shown (%s:%s, %s)", *artwork.unique_key, user_id)
     await call.answer()
@@ -105,9 +123,13 @@ async def favorites_next(call: CallbackQuery) -> None:
         logging.info("favorites last boundary (%s)", user_id)
         await call.answer(LAST_FAVORITE_TEXT)
         return
-    favorites_index[user_id] = index + 1
+
+    async def resolve_index():
+        favorites_index[user_id] = index + 1
+        return favorites_index[user_id]
+
     logging.info("favorites next (%s)", user_id)
-    await show_loading(call)
+    await show_loading_while(call, resolve_index())
     await _show_artwork(call)
     await call.answer()
 
@@ -124,9 +146,13 @@ async def favorites_previous(call: CallbackQuery) -> None:
         logging.info("favorites first boundary (%s)", user_id)
         await call.answer(FIRST_FAVORITE_TEXT)
         return
-    favorites_index[user_id] = index - 1
+
+    async def resolve_index():
+        favorites_index[user_id] = index - 1
+        return favorites_index[user_id]
+
     logging.info("favorites previous (%s)", user_id)
-    await show_loading(call)
+    await show_loading_while(call, resolve_index())
     await _show_artwork(call)
     await call.answer()
 

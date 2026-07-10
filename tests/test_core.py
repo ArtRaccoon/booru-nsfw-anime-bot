@@ -69,7 +69,9 @@ def test_settings_load_defaults():
     assert settings.proxy_url is None
 
 
-@pytest.mark.parametrize("proxy_url", ["socks5://127.0.0.1:1080", "socks5h://127.0.0.1:1080"])
+@pytest.mark.parametrize(
+    "proxy_url", ["socks5://127.0.0.1:1080", "socks5h://127.0.0.1:1080"]
+)
 def test_create_bot_uses_proxy_url(proxy_url):
     settings = Settings(BOT_TOKEN="123:abc", PROXY_URL=proxy_url)
     bot = create_bot(settings)
@@ -101,6 +103,7 @@ class FakeMessage:
         self.answers = []
         self.edits = []
         self.deletes = 0
+        self.sent_messages = []
         self.fail_edit_text = False
         self.fail_edit_caption = False
 
@@ -108,11 +111,14 @@ class FakeMessage:
         self.answers.append((text, kwargs))
         sent = FakeMessage()
         sent.answers = self.answers
+        self.sent_messages.append(sent)
         return sent
 
     async def edit_text(self, text, **kwargs):
         if self.fail_edit_text:
-            raise TelegramBadRequest(method=None, message="there is no text in the message to edit")
+            raise TelegramBadRequest(
+                method=None, message="there is no text in the message to edit"
+            )
         self.edits.append((text, kwargs))
 
     async def delete(self):
@@ -429,7 +435,7 @@ def test_random_viewer_opens(monkeypatch):
     asyncio.run(random_handler.random_open(call))
 
     assert call.message.edits[-1][0] == "🦝 Енот Ищейка"
-    assert call.message.answers[0][0] == "https://example.test/1.jpg"
+    assert call.message.answers[-1][0] == "https://example.test/1.jpg"
     assert service.gallery(42).current.post_id == "1"
 
 
@@ -474,7 +480,7 @@ def test_history_previous_at_first_answers(monkeypatch):
 
     asyncio.run(random_handler.random_previous(call))
 
-    assert call.answers == [("Это первый просмотренный арт.", {})]
+    assert call.answers[-1] == ("Это первый просмотренный арт.", {})
 
 
 def test_back_does_not_fetch(monkeypatch):
@@ -518,7 +524,7 @@ def test_no_unique_art_keeps_current_artwork_visible_and_answers(monkeypatch):
 
     assert service.gallery(42).current.post_id == "1"
     assert call.message.edits == []
-    assert call.answers == [("Пока не нашла новый арт. Попробуйте ещё раз.", {})]
+    assert call.answers[-1] == ("Пока не нашла новый арт. Попробуйте ещё раз.", {})
 
 
 def test_initial_empty_state_shows_main_menu_button(monkeypatch):
@@ -541,7 +547,11 @@ def test_static_pool_has_at_least_30_sfw_items():
     assert len(static_provider._artworks) >= 30
     assert all(art.rating == "safe" for art in static_provider._artworks)
     assert all(
-        art.provider_id and art.post_id and art.file_url and art.preview_url and art.tags
+        art.provider_id
+        and art.post_id
+        and art.file_url
+        and art.preview_url
+        and art.tags
         for art in static_provider._artworks
     )
 
@@ -575,7 +585,9 @@ def test_favorite_duplicate_prevention(monkeypatch):
 
 
 def test_tags_formatting_preserves_all_tags_in_order():
-    artwork = _art("1", ("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9"))
+    artwork = _art(
+        "1", ("tag1", "tag2", "tag3", "tag4", "tag5", "tag6", "tag7", "tag8", "tag9")
+    )
 
     assert format_tags_text(artwork) == (
         "🦝 Енот Ищейка\n\n"
@@ -590,7 +602,10 @@ def test_show_tags_and_return_to_artwork(monkeypatch):
     call = FakeCallback("random:tags")
 
     asyncio.run(random_handler.random_tags(call))
-    assert call.message.edits[-1][0] == "🦝 Енот Ищейка\n\n<blockquote expandable>a, b</blockquote>"
+    assert (
+        call.message.edits[-1][0]
+        == "🦝 Енот Ищейка\n\n<blockquote expandable>a, b</blockquote>"
+    )
     assert call.message.edits[-1][1]["parse_mode"] == "HTML"
 
     asyncio.run(random_handler.random_artwork(call))
@@ -614,7 +629,9 @@ def test_return_to_main_menu_from_random_media_message():
     asyncio.run(random_handler.random_main_menu(call))
 
     assert call.message.deletes == 1
-    assert call.message.answers == [(MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})]
+    assert call.message.answers == [
+        (MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})
+    ]
     assert call.answers == [(None, {})]
 
 
@@ -659,9 +676,9 @@ def test_favorites_open_first_saved_artwork(monkeypatch):
     asyncio.run(favorites_handler.favorites_open(call))
 
     assert call.message.edits[-1][0] == "🦝 Енот Ищейка"
-    assert call.message.answers[0][0] == "https://example.test/1.jpg"
-    assert call.message.answers[0][1]["caption"] == "🦝 Енот Ищейка"
-    assert call.message.answers[0][1]["reply_markup"] == favorites_art_keyboard()
+    assert call.message.answers[-1][0] == "https://example.test/1.jpg"
+    assert call.message.answers[-1][1]["caption"] == "🦝 Енот Ищейка"
+    assert call.message.answers[-1][1]["reply_markup"] == favorites_art_keyboard()
 
 
 def test_favorites_next_and_previous(monkeypatch):
@@ -707,7 +724,8 @@ def test_favorites_tags_formatting_and_return_to_artwork(monkeypatch):
 
     asyncio.run(favorites_handler.favorites_tags(call))
     assert (
-        call.message.edits[-1][0] == "🦝 Енот Ищейка\n\n<blockquote expandable>a, b, c</blockquote>"
+        call.message.edits[-1][0]
+        == "🦝 Енот Ищейка\n\n<blockquote expandable>a, b, c</blockquote>"
     )
     assert call.message.edits[-1][1]["parse_mode"] == "HTML"
     assert call.message.edits[-1][1]["reply_markup"] == favorites_tags_keyboard()
@@ -751,18 +769,22 @@ def test_favorites_main_menu_return_from_media_message_fallback():
     asyncio.run(favorites_handler.favorites_main(call))
 
     assert call.message.deletes == 1
-    assert call.message.answers == [(MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})]
+    assert call.message.answers == [
+        (MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})
+    ]
     assert call.answers == [(None, {})]
 
 
 def test_favorites_user_text_excludes_provider_source_and_rating(monkeypatch):
-    service = RandomArtService([SequenceProvider([_art("1", ("tag", "source", "safe"))])])
+    service = RandomArtService(
+        [SequenceProvider([_art("1", ("tag", "source", "safe"))])]
+    )
     monkeypatch.setattr(favorites_handler, "random_art_service", service)
     _save_artworks(service, count=1)
     call = FakeCallback("menu:favorites")
 
     asyncio.run(favorites_handler.favorites_open(call))
-    user_texts = [call.message.edits[-1][0], call.message.answers[0][1]["caption"]]
+    user_texts = [call.message.edits[-1][0], call.message.answers[-1][1]["caption"]]
 
     assert user_texts == ["🦝 Енот Ищейка", "🦝 Енот Ищейка"]
     assert all(
@@ -832,28 +854,33 @@ def test_search_next_uses_cached_results_before_live_fetch():
     assert service.providers[0]._queue[0].post_id == "live"
 
 
-def test_loading_helper_edits_text_message():
+def test_loading_helper_sends_temporary_message():
     call = FakeCallback("random:next")
 
     asyncio.run(show_loading(call, frames=(LOADING_FRAMES[0],)))
 
-    assert call.message.edits == [(LOADING_FRAMES[0], {})]
+    assert call.message.answers == [(LOADING_FRAMES[0], {})]
+    assert call.message.sent_messages[0].deletes == 1
+    assert call.message.edits == []
     assert call.answers == [(None, {})]
 
 
-def test_loading_helper_edits_media_caption_when_text_edit_fails():
+def test_loading_helper_animates_temporary_message():
     call = FakeCallback("random:next")
-    call.message.fail_edit_text = True
 
-    asyncio.run(show_loading(call, frames=(LOADING_FRAMES[1],)))
+    asyncio.run(show_loading(call, frames=(LOADING_FRAMES[0], LOADING_FRAMES[1])))
 
-    assert call.message.edits == [(LOADING_FRAMES[1], {})]
+    assert call.message.answers == [(LOADING_FRAMES[0], {})]
+    assert call.message.sent_messages[0].edits == [(LOADING_FRAMES[1], {})]
 
 
 def test_loading_helper_does_not_crash_when_edit_fails():
     call = FakeCallback("random:next")
-    call.message.fail_edit_text = True
-    call.message.fail_edit_caption = True
+
+    async def failing_answer(*args, **kwargs):
+        raise TelegramBadRequest(method=None, message="message can't be sent")
+
+    call.message.answer = failing_answer
 
     asyncio.run(show_loading(call, frames=(LOADING_FRAMES[2],)))
 
@@ -868,12 +895,14 @@ def test_random_next_calls_loading_before_final_render(monkeypatch):
 
     asyncio.run(random_handler.random_next(call))
 
-    assert call.message.edits[0][0] == LOADING_FRAMES[0]
+    assert call.message.answers[0][0] == LOADING_FRAMES[0]
     assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
 
 
 def test_search_next_calls_loading_before_final_render(monkeypatch):
-    service = RandomArtService([SequenceProvider([_art("1", ("sunset",)), _art("2", ("sunset",))])])
+    service = RandomArtService(
+        [SequenceProvider([_art("1", ("sunset",)), _art("2", ("sunset",))])]
+    )
     monkeypatch.setattr("app.handlers.start.random_art_service", service)
     asyncio.run(service.start_search(42, ["sunset"]))
     call = FakeCallback("search:next")
@@ -882,7 +911,7 @@ def test_search_next_calls_loading_before_final_render(monkeypatch):
 
     asyncio.run(start_handler.search_next(call))
 
-    assert call.message.edits[0][0] == LOADING_FRAMES[0]
+    assert call.message.answers[0][0] == LOADING_FRAMES[0]
     assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
 
 
@@ -895,7 +924,7 @@ def test_favorites_next_calls_loading_before_final_render(monkeypatch):
 
     asyncio.run(favorites_handler.favorites_next(call))
 
-    assert call.message.edits[0][0] == LOADING_FRAMES[0]
+    assert call.message.answers[0][0] == LOADING_FRAMES[0]
     assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
 
 
@@ -947,7 +976,9 @@ def test_main_callbacks_clear_transient_state(handler, callback_data):
 
 def test_open_search_main_open_search_send_tags_works(monkeypatch):
     search_user_states.clear()
-    service = RandomArtService([SequenceProvider([_art("search", ("landscape", "sunset"))])])
+    service = RandomArtService(
+        [SequenceProvider([_art("search", ("landscape", "sunset"))])]
+    )
     monkeypatch.setattr("app.handlers.start.random_art_service", service)
     first = FakeCallback("menu:search")
     main = FakeCallback("search:main")
@@ -972,4 +1003,6 @@ def test_main_menu_return_from_media_does_not_duplicate_tiny_title():
 
     assert call.message.deletes == 0
     assert call.message.answers == []
-    assert call.message.edits == [(MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})]
+    assert call.message.edits == [
+        (MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})
+    ]

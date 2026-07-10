@@ -17,7 +17,7 @@ from app.keyboards import (
     search_results_keyboard,
     search_tags_keyboard,
 )
-from app.loading import show_loading, show_message_loading
+from app.loading import show_loading, show_loading_while, show_message_loading
 from app.premium import (
     PREMIUM_PLANS,
     TelegramStarsInvoiceService,
@@ -96,7 +96,9 @@ def format_search_preview_text(tags: list[str]) -> str:
     return "🦝 Енот Ищейка\n\n" + ", ".join(tags)
 
 
-async def render_main_menu(target: CallbackQuery | Message, user_id: int | None) -> None:
+async def render_main_menu(
+    target: CallbackQuery | Message, user_id: int | None
+) -> None:
     clear_transient_user_state(user_id)
     message = target.message if hasattr(target, "message") else target
     if message is None:
@@ -112,11 +114,15 @@ async def render_main_menu(target: CallbackQuery | Message, user_id: int | None)
             )
             return
         except TelegramBadRequest as caption_error:
-            logging.info("main menu caption edit failed (%s): %s", user_id, caption_error)
+            logging.info(
+                "main menu caption edit failed (%s): %s", user_id, caption_error
+            )
         try:
             await message.delete()
         except TelegramBadRequest as delete_error:
-            logging.info("main menu stale message delete skipped (%s): %s", user_id, delete_error)
+            logging.info(
+                "main menu stale message delete skipped (%s): %s", user_id, delete_error
+            )
         await message.answer(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
 
 
@@ -147,7 +153,9 @@ async def search_open(call: CallbackQuery) -> None:
         search_user_states[user_id] = SEARCH_WAITING_STATE
     logging.info("search opened (%s)", user_id)
     if call.message:
-        await call.message.edit_text(SEARCH_PROMPT_TEXT, reply_markup=search_prompt_keyboard())
+        await call.message.edit_text(
+            SEARCH_PROMPT_TEXT, reply_markup=search_prompt_keyboard()
+        )
     await call.answer()
 
 
@@ -181,20 +189,35 @@ async def search_text_received(message: Message) -> None:
 
 async def _show_search_artwork(call: CallbackQuery, *, send_new: bool = False) -> None:
     user_id = _user_id(call)
-    session = random_art_service.search_gallery(user_id) if user_id is not None else None
+    session = (
+        random_art_service.search_gallery(user_id) if user_id is not None else None
+    )
     artwork = session.current if session else None
     if artwork is None:
         await call.answer(NO_UNIQUE_ART_TEXT)
         return
     if send_new and call.message:
         await call.message.answer_photo(
-            artwork.file_url, caption=RANDOM_TITLE, reply_markup=search_results_keyboard()
-        )
-    elif call.message:
-        await call.message.edit_media(
-            InputMediaPhoto(media=artwork.file_url, caption=RANDOM_TITLE),
+            artwork.file_url,
+            caption=RANDOM_TITLE,
             reply_markup=search_results_keyboard(),
         )
+    elif call.message:
+        try:
+            await call.message.edit_media(
+                InputMediaPhoto(media=artwork.file_url, caption=RANDOM_TITLE),
+                reply_markup=search_results_keyboard(),
+            )
+        except TelegramBadRequest as error:
+            logging.info(
+                "search edit_media failed, sending replacement (%s): %s", user_id, error
+            )
+            await call.message.delete()
+            await call.message.answer_photo(
+                artwork.file_url,
+                caption=RANDOM_TITLE,
+                reply_markup=search_results_keyboard(),
+            )
     await call.answer()
 
 
@@ -204,13 +227,17 @@ async def search_next(call: CallbackQuery) -> None:
     if user_id is None:
         await call.answer()
         return
-    artwork = random_art_service.next_search_from_history(user_id)
-    if artwork is None:
-        artwork = await random_art_service.next_search_artwork(user_id)
+
+    async def resolve_artwork():
+        artwork = random_art_service.next_search_from_history(user_id)
+        if artwork is None:
+            return await random_art_service.next_search_artwork(user_id)
+        return artwork
+
+    artwork = await show_loading_while(call, resolve_artwork())
     if artwork is None:
         await call.answer(NO_UNIQUE_ART_TEXT)
         return
-    await show_loading(call)
     await _show_search_artwork(call)
 
 
@@ -220,17 +247,22 @@ async def search_previous(call: CallbackQuery) -> None:
     if user_id is None:
         await call.answer()
         return
-    if random_art_service.previous_search_artwork(user_id) is None:
+
+    async def resolve_artwork():
+        return random_art_service.previous_search_artwork(user_id)
+
+    if await show_loading_while(call, resolve_artwork()) is None:
         await call.answer(FIRST_ART_TEXT)
         return
-    await show_loading(call)
     await _show_search_artwork(call)
 
 
 @router.callback_query(F.data == "search:tags")
 async def search_tags(call: CallbackQuery) -> None:
     user_id = _user_id(call)
-    session = random_art_service.search_gallery(user_id) if user_id is not None else None
+    session = (
+        random_art_service.search_gallery(user_id) if user_id is not None else None
+    )
     artwork = session.current if session else None
     if artwork is None:
         await call.answer(NO_UNIQUE_ART_TEXT)
@@ -253,7 +285,9 @@ async def search_artwork(call: CallbackQuery) -> None:
 @router.callback_query(F.data == "search:save")
 async def search_save(call: CallbackQuery) -> None:
     user_id = _user_id(call)
-    session = random_art_service.search_gallery(user_id) if user_id is not None else None
+    session = (
+        random_art_service.search_gallery(user_id) if user_id is not None else None
+    )
     artwork = session.current if session else None
     if user_id is None or artwork is None:
         await call.answer(NO_UNIQUE_ART_TEXT)
