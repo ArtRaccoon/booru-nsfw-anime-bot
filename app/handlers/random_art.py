@@ -3,15 +3,14 @@ from __future__ import annotations
 import logging
 
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InputMediaPhoto
 
 from app.keyboards import (
-    main_menu_keyboard,
     random_art_keyboard,
     random_empty_keyboard,
     random_tags_keyboard,
 )
+from app.loading import show_loading
 from app.random_art import (
     FIRST_ART_TEXT,
     INITIAL_EMPTY_ART_TEXT,
@@ -59,6 +58,7 @@ async def random_open(call: CallbackQuery) -> None:
     if user_id is None:
         await call.answer()
         return
+    await show_loading(call)
     artwork = await random_art_service.next_artwork(user_id)
     if artwork is None:
         logging.info("initial random empty (%s)", user_id)
@@ -86,6 +86,7 @@ async def random_next(call: CallbackQuery) -> None:
     if artwork is None:
         await call.answer(NO_UNIQUE_ART_TEXT)
         return
+    await show_loading(call)
     await _show_artwork(call, send_new=False)
 
 
@@ -99,6 +100,7 @@ async def random_previous(call: CallbackQuery) -> None:
     if artwork is None:
         await call.answer(FIRST_ART_TEXT)
         return
+    await show_loading(call)
     await _show_artwork(call, send_new=False)
 
 
@@ -145,20 +147,16 @@ async def random_artwork(call: CallbackQuery) -> None:
     artwork = random_art_service.gallery(user_id).current
     if artwork:
         logging.info("returned to artwork (%s:%s, %s)", *artwork.unique_key, user_id)
+    await show_loading(call)
     await _show_artwork(call, send_new=False)
 
 
 @router.callback_query(F.data == "random:main")
 async def random_main_menu(call: CallbackQuery) -> None:
-    from app.handlers.start import MAIN_MENU_TEXT
+    from app.handlers.start import render_main_menu
 
     user_id = _user_id(call)
     logging.info("random main menu clicked (%s)", user_id)
-    if call.message:
-        try:
-            await call.message.edit_text(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
-        except TelegramBadRequest:
-            await call.message.delete()
-            await call.message.answer(MAIN_MENU_TEXT, reply_markup=main_menu_keyboard())
+    await render_main_menu(call, user_id)
     logging.info("random main menu returned (%s)", user_id)
     await call.answer()

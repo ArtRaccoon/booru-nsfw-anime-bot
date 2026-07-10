@@ -44,6 +44,7 @@ from app.keyboards import (
     search_prompt_keyboard,
     search_results_keyboard,
 )
+from app.loading import LOADING_FRAMES, show_loading
 from app.premium import (
     PREMIUM_PLANS,
     PremiumState,
@@ -101,9 +102,13 @@ class FakeMessage:
         self.edits = []
         self.deletes = 0
         self.fail_edit_text = False
+        self.fail_edit_caption = False
 
     async def answer(self, text, **kwargs):
         self.answers.append((text, kwargs))
+        sent = FakeMessage()
+        sent.answers = self.answers
+        return sent
 
     async def edit_text(self, text, **kwargs):
         if self.fail_edit_text:
@@ -120,6 +125,8 @@ class FakeMessage:
         self.edits.append((media, kwargs))
 
     async def edit_caption(self, caption=None, **kwargs):
+        if self.fail_edit_caption:
+            raise TelegramBadRequest(method=None, message="message can't be edited")
         self.edits.append((caption, kwargs))
 
 
@@ -352,9 +359,9 @@ def test_search_text_shows_parsed_tags_preview_and_clears_state(monkeypatch):
 
     asyncio.run(search_text_received(message))
 
-    assert message.answers[0][0] == "https://example.test/search-1.jpg"
-    assert message.answers[0][1]["caption"] == random_handler.RANDOM_TITLE
-    assert message.answers[0][1]["reply_markup"] == search_results_keyboard()
+    assert message.answers[-1][0] == "https://example.test/search-1.jpg"
+    assert message.answers[-1][1]["caption"] == random_handler.RANDOM_TITLE
+    assert message.answers[-1][1]["reply_markup"] == search_results_keyboard()
     assert 42 not in search_user_states
 
 
@@ -421,7 +428,7 @@ def test_random_viewer_opens(monkeypatch):
 
     asyncio.run(random_handler.random_open(call))
 
-    assert call.message.edits[0][0] == "🦝 Енот Ищейка"
+    assert call.message.edits[-1][0] == "🦝 Енот Ищейка"
     assert call.message.answers[0][0] == "https://example.test/1.jpg"
     assert service.gallery(42).current.post_id == "1"
 
@@ -521,8 +528,8 @@ def test_initial_empty_state_shows_main_menu_button(monkeypatch):
 
     asyncio.run(random_handler.random_open(call))
 
-    assert call.message.edits[0][0] == "Пока не удалось найти арт. Попробуйте позже."
-    buttons = _buttons(call.message.edits[0][1]["reply_markup"])
+    assert call.message.edits[-1][0] == "Пока не удалось найти арт. Попробуйте позже."
+    buttons = _buttons(call.message.edits[-1][1]["reply_markup"])
     assert [(button.text, button.callback_data) for button in buttons] == [
         ("🏠 Главное меню", "random:main")
     ]
@@ -602,6 +609,7 @@ def test_return_to_main_menu_from_random():
 def test_return_to_main_menu_from_random_media_message():
     call = FakeCallback("random:main")
     call.message.fail_edit_text = True
+    call.message.fail_edit_caption = True
 
     asyncio.run(random_handler.random_main_menu(call))
 
@@ -638,8 +646,8 @@ def test_favorites_open_empty_state(monkeypatch):
 
     asyncio.run(favorites_handler.favorites_open(call))
 
-    assert call.message.edits[0][0] == favorites_handler.EMPTY_FAVORITES_TEXT
-    assert call.message.edits[0][1]["reply_markup"] == favorites_empty_keyboard()
+    assert call.message.edits[-1][0] == favorites_handler.EMPTY_FAVORITES_TEXT
+    assert call.message.edits[-1][1]["reply_markup"] == favorites_empty_keyboard()
 
 
 def test_favorites_open_first_saved_artwork(monkeypatch):
@@ -650,7 +658,7 @@ def test_favorites_open_first_saved_artwork(monkeypatch):
 
     asyncio.run(favorites_handler.favorites_open(call))
 
-    assert call.message.edits[0][0] == "🦝 Енот Ищейка"
+    assert call.message.edits[-1][0] == "🦝 Енот Ищейка"
     assert call.message.answers[0][0] == "https://example.test/1.jpg"
     assert call.message.answers[0][1]["caption"] == "🦝 Енот Ищейка"
     assert call.message.answers[0][1]["reply_markup"] == favorites_art_keyboard()
@@ -738,6 +746,7 @@ def test_favorites_delete_last_item_shows_empty(monkeypatch):
 def test_favorites_main_menu_return_from_media_message_fallback():
     call = FakeCallback("favorites:main")
     call.message.fail_edit_text = True
+    call.message.fail_edit_caption = True
 
     asyncio.run(favorites_handler.favorites_main(call))
 
@@ -753,7 +762,7 @@ def test_favorites_user_text_excludes_provider_source_and_rating(monkeypatch):
     call = FakeCallback("menu:favorites")
 
     asyncio.run(favorites_handler.favorites_open(call))
-    user_texts = [call.message.edits[0][0], call.message.answers[0][1]["caption"]]
+    user_texts = [call.message.edits[-1][0], call.message.answers[0][1]["caption"]]
 
     assert user_texts == ["🦝 Енот Ищейка", "🦝 Енот Ищейка"]
     assert all(
@@ -821,3 +830,146 @@ def test_search_next_uses_cached_results_before_live_fetch():
 
     assert asyncio.run(service.start_search(42, ["sunset"])).post_id == "cached"
     assert service.providers[0]._queue[0].post_id == "live"
+
+
+def test_loading_helper_edits_text_message():
+    call = FakeCallback("random:next")
+
+    asyncio.run(show_loading(call, frames=(LOADING_FRAMES[0],)))
+
+    assert call.message.edits == [(LOADING_FRAMES[0], {})]
+    assert call.answers == [(None, {})]
+
+
+def test_loading_helper_edits_media_caption_when_text_edit_fails():
+    call = FakeCallback("random:next")
+    call.message.fail_edit_text = True
+
+    asyncio.run(show_loading(call, frames=(LOADING_FRAMES[1],)))
+
+    assert call.message.edits == [(LOADING_FRAMES[1], {})]
+
+
+def test_loading_helper_does_not_crash_when_edit_fails():
+    call = FakeCallback("random:next")
+    call.message.fail_edit_text = True
+    call.message.fail_edit_caption = True
+
+    asyncio.run(show_loading(call, frames=(LOADING_FRAMES[2],)))
+
+    assert call.answers == [(None, {}), ("Ищу арт…", {})]
+
+
+def test_random_next_calls_loading_before_final_render(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1"), _art("2")])])
+    monkeypatch.setattr(random_handler, "random_art_service", service)
+    asyncio.run(service.next_artwork(42))
+    call = FakeCallback("random:next")
+
+    asyncio.run(random_handler.random_next(call))
+
+    assert call.message.edits[0][0] == LOADING_FRAMES[0]
+    assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
+
+
+def test_search_next_calls_loading_before_final_render(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1", ("sunset",)), _art("2", ("sunset",))])])
+    monkeypatch.setattr("app.handlers.start.random_art_service", service)
+    asyncio.run(service.start_search(42, ["sunset"]))
+    call = FakeCallback("search:next")
+
+    from app.handlers import start as start_handler
+
+    asyncio.run(start_handler.search_next(call))
+
+    assert call.message.edits[0][0] == LOADING_FRAMES[0]
+    assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
+
+
+def test_favorites_next_calls_loading_before_final_render(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1"), _art("2")])])
+    monkeypatch.setattr(favorites_handler, "random_art_service", service)
+    _save_artworks(service, count=2)
+    favorites_handler.favorites_index[42] = 0
+    call = FakeCallback("favorites:next")
+
+    asyncio.run(favorites_handler.favorites_next(call))
+
+    assert call.message.edits[0][0] == LOADING_FRAMES[0]
+    assert call.message.edits[-1][0].media == "https://example.test/2.jpg"
+
+
+def test_save_tags_and_main_menu_do_not_call_loading(monkeypatch):
+    service = RandomArtService([SequenceProvider([_art("1")])])
+    monkeypatch.setattr(random_handler, "random_art_service", service)
+    asyncio.run(service.next_artwork(42))
+    save_call = FakeCallback("random:save")
+    tags_call = FakeCallback("random:tags")
+    menu_call = FakeCallback("random:main")
+
+    asyncio.run(random_handler.random_save(save_call))
+    asyncio.run(random_handler.random_tags(tags_call))
+    asyncio.run(random_handler.random_main_menu(menu_call))
+
+    assert all(edit[0] not in LOADING_FRAMES for edit in save_call.message.edits)
+    assert all(edit[0] not in LOADING_FRAMES for edit in tags_call.message.edits)
+    assert all(edit[0] not in LOADING_FRAMES for edit in menu_call.message.edits)
+
+
+def test_start_clears_transient_search_state():
+    search_user_states[42] = "waiting_for_search_tags"
+    message = FakeMessage()
+
+    asyncio.run(start(message))
+
+    assert 42 not in search_user_states
+
+
+@pytest.mark.parametrize(
+    ("handler", "callback_data"),
+    [
+        (search_main_menu, "search:main"),
+        (random_handler.random_main_menu, "random:main"),
+        (favorites_handler.favorites_main, "favorites:main"),
+        (premium_main_menu, "premium:main"),
+    ],
+)
+def test_main_callbacks_clear_transient_state(handler, callback_data):
+    search_user_states[42] = "waiting_for_search_tags"
+    call = FakeCallback(callback_data)
+
+    asyncio.run(handler(call))
+
+    assert 42 not in search_user_states
+    assert call.message.edits[-1][0] == MAIN_MENU_TEXT
+    assert call.message.edits[-1][1]["reply_markup"] == main_menu_keyboard()
+
+
+def test_open_search_main_open_search_send_tags_works(monkeypatch):
+    search_user_states.clear()
+    service = RandomArtService([SequenceProvider([_art("search", ("landscape", "sunset"))])])
+    monkeypatch.setattr("app.handlers.start.random_art_service", service)
+    first = FakeCallback("menu:search")
+    main = FakeCallback("search:main")
+    second = FakeCallback("menu:search")
+    message = FakeMessage()
+    message.text = "landscape, sunset"
+
+    asyncio.run(search_open(first))
+    asyncio.run(search_main_menu(main))
+    asyncio.run(search_open(second))
+    asyncio.run(search_text_received(message))
+
+    assert message.answers[-1][0] == "https://example.test/search.jpg"
+    assert all(answer[0] != SEARCH_HINT_TEXT for answer in message.answers)
+
+
+def test_main_menu_return_from_media_does_not_duplicate_tiny_title():
+    call = FakeCallback("random:main")
+    call.message.fail_edit_text = True
+
+    asyncio.run(random_handler.random_main_menu(call))
+
+    assert call.message.deletes == 0
+    assert call.message.answers == []
+    assert call.message.edits == [(MAIN_MENU_TEXT, {"reply_markup": main_menu_keyboard()})]
